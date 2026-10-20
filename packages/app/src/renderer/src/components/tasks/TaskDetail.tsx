@@ -1,0 +1,285 @@
+import { useEffect, useRef, useState } from 'react';
+import {
+  CalendarClock,
+  Check,
+  Circle,
+  CircleDashed,
+  FileText,
+  Link2,
+  Plus,
+  RotateCcw,
+  Tag,
+  Trash2,
+  X,
+} from 'lucide-react';
+import { motion } from 'motion/react';
+import type { Task, TaskPriority, TaskStatus } from '@memex/shared';
+import { useAppStore } from '../../store/useAppStore';
+import { Button } from '../ui/button';
+import { cn } from '../ui/utils';
+import { fromDateTimeInput, toDateTimeInput } from '../../lib/date';
+
+const STATUS_META: { value: TaskStatus; label: string; icon: typeof Circle }[] = [
+  { value: 'todo', label: '待办', icon: Circle },
+  { value: 'doing', label: '进行中', icon: CircleDashed },
+  { value: 'done', label: '完成', icon: Check },
+];
+
+const PRIORITY_META: { value: TaskPriority; label: string; color: string }[] = [
+  { value: 'high', label: '高', color: '#c2413a' },
+  { value: 'medium', label: '中', color: '#c08a2e' },
+  { value: 'low', label: '低', color: '#7d8b90' },
+];
+
+export function TaskDetail() {
+  const { activeTask, notes, updateTask, deleteTask, restoreTask, purgeTask, setListCollapsed } = useAppStore();
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [tagDraft, setTagDraft] = useState('');
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const taskIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (activeTask?.id !== taskIdRef.current) {
+      taskIdRef.current = activeTask?.id ?? null;
+      setTitle(activeTask?.title ?? '');
+      setDescription(activeTask?.description ?? '');
+      setSaveState('idle');
+    }
+  }, [activeTask?.id, activeTask?.title, activeTask?.description]);
+
+  useEffect(() => {
+    if (!activeTask) return;
+    const patch: { title?: string; description?: string } = {};
+    if (title.trim() && title !== activeTask.title) patch.title = title.trim();
+    if (description !== (activeTask.description ?? '')) patch.description = description;
+    if (Object.keys(patch).length === 0) return;
+
+    const timer = setTimeout(() => {
+      setSaveState('saving');
+      void updateTask(activeTask.id, patch).then(() => {
+        setSaveState('saved');
+        window.setTimeout(() => setSaveState('idle'), 1400);
+      });
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [title, description, activeTask, updateTask]);
+
+  if (!activeTask) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center bg-[var(--bg)] paper-grain">
+        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-[var(--line)] bg-[var(--surface-2)] text-[var(--faint)] shadow-soft">
+          <FileText size={22} />
+        </div>
+        <p className="text-sm font-medium">选择一条任务</p>
+        <p className="mt-1 text-xs text-[var(--faint)]">或者按 Ctrl+N 新建一条</p>
+      </div>
+    );
+  }
+
+  const task = activeTask;
+  const isTrash = taskViewIsTrash(task);
+
+  const addTag = async () => {
+    const clean = tagDraft.trim();
+    if (!clean || task.tags.includes(clean)) {
+      setTagDraft('');
+      return;
+    }
+    setTagDraft('');
+    await updateTask(task.id, { tags: [...task.tags, clean] });
+  };
+
+  return (
+    <motion.section
+      key={task.id}
+      initial={{ opacity: 0, y: 5 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.18 }}
+      className="thin-scroll flex min-w-0 flex-1 flex-col overflow-y-auto bg-[var(--bg)]"
+    >
+      <div className="mx-auto flex w-full max-w-[760px] flex-1 flex-col px-10 py-8">
+        <div className="mb-6 flex items-center gap-2">
+          <button
+            onClick={() => setListCollapsed(false)}
+            className="rounded-md px-2 py-1 text-[10px] text-[var(--faint)] transition hover:bg-[var(--hover)] hover:text-[var(--ink)] lg:hidden"
+          >
+            返回列表
+          </button>
+          <div className="flex items-center gap-1.5 text-[10.5px] text-[var(--faint)]">
+            <Tag size={11} />
+            <span>任务</span>
+            <span>/</span>
+            <span>{task.status === 'done' ? '已完成' : task.status === 'doing' ? '进行中' : '待办'}</span>
+          </div>
+          <span className="flex-1" />
+          {saveState !== 'idle' ? (
+            <span className="text-[10px] text-[var(--faint)]">{saveState === 'saving' ? '保存中…' : '已保存'}</span>
+          ) : null}
+        </div>
+
+        <div className="flex items-start gap-3">
+          <button
+            onClick={() => void updateTask(task.id, { status: task.status === 'done' ? 'todo' : 'done' })}
+            className={cn(
+              'mt-1.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-all',
+              task.status === 'done'
+                ? 'border-[var(--accent)] bg-[var(--accent)] text-white'
+                : 'border-[var(--line-strong)] text-transparent hover:border-[var(--accent)]',
+            )}
+          >
+            <Check size={13} strokeWidth={3} />
+          </button>
+          <textarea
+            rows={1}
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                (event.currentTarget as HTMLTextAreaElement).blur();
+              }
+            }}
+            className={cn(
+              'min-h-[42px] flex-1 resize-none bg-transparent font-serif text-[26px] font-semibold leading-tight tracking-[-0.02em] outline-none placeholder:text-[var(--faint)]',
+              task.status === 'done' ? 'text-[var(--faint)] line-through' : 'text-[var(--ink)]',
+            )}
+            placeholder="任务标题"
+          />
+        </div>
+
+        <textarea
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
+          placeholder="补充描述、上下文或下一步…"
+          className="mt-5 min-h-[90px] w-full resize-none rounded-xl border border-transparent bg-transparent px-3 py-2 font-serif text-[14px] leading-7 outline-none transition placeholder:text-[var(--faint)] hover:border-[var(--line)] focus:border-[var(--line)] focus:bg-[var(--surface)]"
+        />
+
+        <div className="my-6 h-px bg-[var(--line)]" />
+
+        <div className="grid grid-cols-[100px_1fr] gap-x-4 gap-y-5 text-[12px]">
+          <span className="pt-1.5 text-[10.5px] uppercase tracking-[0.12em] text-[var(--faint)]">状态</span>
+          <div className="flex flex-wrap gap-1.5">
+            {STATUS_META.map((meta) => {
+              const Icon = meta.icon;
+              return (
+                <button
+                  key={meta.value}
+                  onClick={() => void updateTask(task.id, { status: meta.value })}
+                  className={cn(
+                    'inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] transition',
+                    task.status === meta.value
+                      ? 'border-[var(--accent)]/40 bg-[var(--accent-soft)] text-[var(--accent)]'
+                      : 'border-[var(--line)] text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]',
+                  )}
+                >
+                  <Icon size={12} />
+                  {meta.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <span className="pt-1.5 text-[10.5px] uppercase tracking-[0.12em] text-[var(--faint)]">优先级</span>
+          <div className="flex flex-wrap gap-1.5">
+            {PRIORITY_META.map((meta) => (
+              <button
+                key={meta.value}
+                onClick={() => void updateTask(task.id, { priority: meta.value })}
+                className={cn(
+                  'inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] transition',
+                  task.priority === meta.value
+                    ? 'border-[var(--line-strong)] bg-[var(--surface-2)] text-[var(--ink)] shadow-sm'
+                    : 'border-[var(--line)] text-[var(--muted)] hover:bg-[var(--hover)]',
+                )}
+              >
+                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: meta.color }} />
+                {meta.label}
+              </button>
+            ))}
+          </div>
+
+          <span className="flex items-center gap-1.5 pt-1.5 text-[10.5px] uppercase tracking-[0.12em] text-[var(--faint)]">
+            <CalendarClock size={11} /> 截止
+          </span>
+          <input
+            type="datetime-local"
+            value={toDateTimeInput(task.dueAt)}
+            onChange={(event) => void updateTask(task.id, { dueAt: fromDateTimeInput(event.target.value) })}
+            className="h-8 w-fit rounded-lg border border-transparent bg-transparent px-2 text-[12px] text-[var(--ink)] outline-none transition hover:border-[var(--line)] focus:border-[var(--line)] focus:bg-[var(--surface-2)]"
+          />
+
+          <span className="flex items-center gap-1.5 pt-1.5 text-[10.5px] uppercase tracking-[0.12em] text-[var(--faint)]">
+            <Tag size={11} /> 标签
+          </span>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {task.tags.map((tag) => (
+              <span key={tag} className="inline-flex h-6 items-center gap-1 rounded-md bg-[var(--surface-2)] px-2 text-[10.5px] text-[var(--muted)] ring-1 ring-[var(--line)]">
+                {tag}
+                <button onClick={() => void updateTask(task.id, { tags: task.tags.filter((item) => item !== tag) })} className="text-[var(--faint)] hover:text-red-500">
+                  <X size={10} />
+                </button>
+              </span>
+            ))}
+            <div className="flex h-6 items-center gap-1 rounded-md border border-dashed border-[var(--line)] px-1.5">
+              <Plus size={10} className="text-[var(--faint)]" />
+              <input
+                value={tagDraft}
+                onChange={(event) => setTagDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') void addTag();
+                }}
+                placeholder="加标签"
+                className="w-16 bg-transparent text-[10.5px] outline-none placeholder:text-[var(--faint)]"
+              />
+            </div>
+          </div>
+
+          <span className="flex items-center gap-1.5 pt-1.5 text-[10.5px] uppercase tracking-[0.12em] text-[var(--faint)]">
+            <Link2 size={11} /> 关联笔记
+          </span>
+          <div>
+            <select
+              value={task.noteId ?? ''}
+              onChange={(event) => void updateTask(task.id, { noteId: event.target.value || null })}
+              className="h-8 max-w-[280px] rounded-lg border border-[var(--line)] bg-[var(--surface-2)] px-2 text-[11.5px] text-[var(--ink)] outline-none"
+            >
+              <option value="">未关联</option>
+              {notes.map((note) => (
+                <option key={note.id} value={note.id}>
+                  {note.title}
+                </option>
+              ))}
+            </select>
+            {task.noteInTrash ? <p className="mt-1 text-[10px] text-amber-600">关联笔记在回收站</p> : null}
+          </div>
+        </div>
+
+        <div className="mt-10 flex items-center gap-2 border-t border-[var(--line)] pt-4">
+          <span className="text-[10px] text-[var(--faint)]">
+            创建于 {new Date(task.createdAt).toLocaleString('zh-CN', { hour12: false })}
+          </span>
+          <span className="flex-1" />
+          {isTrash ? (
+            <>
+              <Button variant="outline" size="sm" onClick={() => void restoreTask(task.id)}>
+                <RotateCcw size={13} /> 恢复
+              </Button>
+              <Button variant="danger" size="sm" onClick={() => void purgeTask(task.id)}>
+                <Trash2 size={13} /> 彻底删除
+              </Button>
+            </>
+          ) : (
+            <Button variant="ghost" size="sm" className="text-[var(--muted)] hover:text-red-500" onClick={() => void deleteTask(task.id)}>
+              <Trash2 size={13} /> 移到回收站
+            </Button>
+          )}
+        </div>
+      </div>
+    </motion.section>
+  );
+}
+
+function taskViewIsTrash(task: Task): boolean {
+  return task.deletedAt !== null;
+}

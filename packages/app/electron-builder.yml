@@ -1,0 +1,24 @@
+appId: com.memex.desktop
+productName: Memex
+directories:
+  output: ../../release
+  buildResources: resources
+files:
+  - out/**
+  - package.json
+extraResources:
+  - from: ../mcp/dist
+    to: mcp
+    filter:
+      - 'index.mjs'
+win:
+  icon: resources/icon.png
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true

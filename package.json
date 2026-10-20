@@ -1,0 +1,24 @@
+{
+  "name": "memex",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "build:shared": "pnpm --filter @memex/shared build",
+    "build": "pnpm build:shared && pnpm --filter @memex/mcp build && pnpm --filter @memex/app build",
+    "dev": "pnpm build:shared && pnpm --filter @memex/app dev",
+    "test": "pnpm build:shared && pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "dist": "pnpm build && pnpm --filter @memex/app dist",
+    "test:e2e": "pnpm build && playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "playwright": "^1.64.1",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.5"
+  }
+}
