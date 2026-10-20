@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   CalendarClock,
   Check,
+  ChevronDown,
   Circle,
   CircleDashed,
   FileText,
@@ -12,18 +13,20 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { motion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import type { Task, TaskPriority, TaskStatus } from '@memex/shared';
 import { useAppStore } from '../../store/useAppStore';
 import { Button } from '../ui/button';
 import { cn } from '../ui/utils';
-import { fromDateTimeInput, toDateTimeInput } from '../../lib/date';
+import { formatDue, fromDateTimeInput, toDateTimeInput } from '../../lib/date';
 
 const STATUS_META: { value: TaskStatus; label: string; icon: typeof Circle }[] = [
   { value: 'todo', label: '待办', icon: Circle },
   { value: 'doing', label: '进行中', icon: CircleDashed },
   { value: 'done', label: '完成', icon: Check },
 ];
+
+const PROPERTIES_COLLAPSED_KEY = 'memex:task-properties-collapsed';
 
 const PRIORITY_META: { value: TaskPriority; label: string; color: string }[] = [
   { value: 'high', label: '高', color: '#c2413a' },
@@ -37,6 +40,7 @@ export function TaskDetail() {
   const [description, setDescription] = useState('');
   const [tagDraft, setTagDraft] = useState('');
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [propertiesCollapsed, setPropertiesCollapsed] = useState(readPropertiesCollapsed);
   const taskIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -79,6 +83,23 @@ export function TaskDetail() {
 
   const task = activeTask;
   const isTrash = taskViewIsTrash(task);
+  const statusLabel = STATUS_META.find((meta) => meta.value === task.status)?.label ?? '';
+  const priorityLabel = PRIORITY_META.find((meta) => meta.value === task.priority)?.label ?? '';
+  const summary = [statusLabel, priorityLabel, task.dueAt ? formatDue(task.dueAt) : null, ...task.tags]
+    .filter(Boolean)
+    .join(' · ');
+
+  const toggleProperties = () => {
+    setPropertiesCollapsed((current) => {
+      const next = !current;
+      try {
+        localStorage.setItem(PROPERTIES_COLLAPSED_KEY, String(next));
+      } catch {
+        // Private browsing or a locked-down renderer should not block the UI.
+      }
+      return next;
+    });
+  };
 
   const addTag = async () => {
     const clean = tagDraft.trim();
@@ -155,106 +176,139 @@ export function TaskDetail() {
           className="mt-5 min-h-[90px] w-full resize-none rounded-xl border border-transparent bg-transparent px-3 py-2 font-serif text-[14px] leading-7 outline-none transition placeholder:text-[var(--faint)] hover:border-[var(--line)] focus:border-[var(--line)] focus:bg-[var(--surface)]"
         />
 
-        <div className="my-6 h-px bg-[var(--line)]" />
-
-        <div className="grid grid-cols-[100px_1fr] gap-x-4 gap-y-5 text-[12px]">
-          <span className="pt-1.5 text-[10.5px] uppercase tracking-[0.12em] text-[var(--faint)]">状态</span>
-          <div className="flex flex-wrap gap-1.5">
-            {STATUS_META.map((meta) => {
-              const Icon = meta.icon;
-              return (
-                <button
-                  key={meta.value}
-                  onClick={() => void updateTask(task.id, { status: meta.value })}
-                  className={cn(
-                    'inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] transition',
-                    task.status === meta.value
-                      ? 'border-[var(--accent)]/40 bg-[var(--accent-soft)] text-[var(--accent)]'
-                      : 'border-[var(--line)] text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]',
-                  )}
-                >
-                  <Icon size={12} />
-                  {meta.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <span className="pt-1.5 text-[10.5px] uppercase tracking-[0.12em] text-[var(--faint)]">优先级</span>
-          <div className="flex flex-wrap gap-1.5">
-            {PRIORITY_META.map((meta) => (
-              <button
-                key={meta.value}
-                onClick={() => void updateTask(task.id, { priority: meta.value })}
-                className={cn(
-                  'inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] transition',
-                  task.priority === meta.value
-                    ? 'border-[var(--line-strong)] bg-[var(--surface-2)] text-[var(--ink)] shadow-sm'
-                    : 'border-[var(--line)] text-[var(--muted)] hover:bg-[var(--hover)]',
-                )}
-              >
-                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: meta.color }} />
-                {meta.label}
-              </button>
-            ))}
-          </div>
-
-          <span className="flex items-center gap-1.5 pt-1.5 text-[10.5px] uppercase tracking-[0.12em] text-[var(--faint)]">
-            <CalendarClock size={11} /> 截止
-          </span>
-          <input
-            type="datetime-local"
-            value={toDateTimeInput(task.dueAt)}
-            onChange={(event) => void updateTask(task.id, { dueAt: fromDateTimeInput(event.target.value) })}
-            className="h-8 w-fit rounded-lg border border-transparent bg-transparent px-2 text-[12px] text-[var(--ink)] outline-none transition hover:border-[var(--line)] focus:border-[var(--line)] focus:bg-[var(--surface-2)]"
-          />
-
-          <span className="flex items-center gap-1.5 pt-1.5 text-[10.5px] uppercase tracking-[0.12em] text-[var(--faint)]">
-            <Tag size={11} /> 标签
-          </span>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {task.tags.map((tag) => (
-              <span key={tag} className="inline-flex h-6 items-center gap-1 rounded-md bg-[var(--surface-2)] px-2 text-[10.5px] text-[var(--muted)] ring-1 ring-[var(--line)]">
-                {tag}
-                <button onClick={() => void updateTask(task.id, { tags: task.tags.filter((item) => item !== tag) })} className="text-[var(--faint)] hover:text-red-500">
-                  <X size={10} />
-                </button>
-              </span>
-            ))}
-            <div className="flex h-6 items-center gap-1 rounded-md border border-dashed border-[var(--line)] px-1.5">
-              <Plus size={10} className="text-[var(--faint)]" />
-              <input
-                value={tagDraft}
-                onChange={(event) => setTagDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') void addTag();
-                }}
-                placeholder="加标签"
-                className="w-16 bg-transparent text-[10.5px] outline-none placeholder:text-[var(--faint)]"
-              />
+        <div className="mt-6 border-t border-[var(--line)]">
+          <button
+            type="button"
+            aria-expanded={!propertiesCollapsed}
+            aria-controls="task-properties"
+            aria-label={propertiesCollapsed ? '展开任务属性' : '收起任务属性'}
+            onClick={toggleProperties}
+            className="group flex w-full items-center gap-3 py-3 text-left"
+          >
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <span className="truncate text-[11px] text-[var(--muted)]">{summary}</span>
             </div>
-          </div>
-
-          <span className="flex items-center gap-1.5 pt-1.5 text-[10.5px] uppercase tracking-[0.12em] text-[var(--faint)]">
-            <Link2 size={11} /> 关联笔记
-          </span>
-          <div>
-            <select
-              value={task.noteId ?? ''}
-              onChange={(event) => void updateTask(task.id, { noteId: event.target.value || null })}
-              className="h-8 max-w-[280px] rounded-lg border border-[var(--line)] bg-[var(--surface-2)] px-2 text-[11.5px] text-[var(--ink)] outline-none"
+            <span className="shrink-0 text-[10px] text-[var(--faint)]">{propertiesCollapsed ? '属性' : '收起'}</span>
+            <motion.span
+              animate={{ rotate: propertiesCollapsed ? 0 : 180 }}
+              transition={{ duration: 0.16 }}
+              className="shrink-0 text-[var(--faint)]"
             >
-              <option value="">未关联</option>
-              {notes.map((note) => (
-                <option key={note.id} value={note.id}>
-                  {note.title}
-                </option>
-              ))}
-            </select>
-            {task.noteInTrash ? <p className="mt-1 text-[10px] text-amber-600">关联笔记在回收站</p> : null}
-          </div>
-        </div>
+              <ChevronDown size={14} />
+            </motion.span>
+          </button>
 
+          <AnimatePresence initial={false}>
+            {!propertiesCollapsed ? (
+              <motion.div
+                id="task-properties"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                className="overflow-hidden"
+              >
+                <div className="grid grid-cols-[100px_1fr] gap-x-4 gap-y-5 pb-2 pt-2 text-[12px]">
+                  <span className="pt-1.5 text-[10.5px] uppercase tracking-[0.12em] text-[var(--faint)]">状态</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {STATUS_META.map((meta) => {
+                      const Icon = meta.icon;
+                      return (
+                        <button
+                          key={meta.value}
+                          onClick={() => void updateTask(task.id, { status: meta.value })}
+                          className={cn(
+                            'inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] transition',
+                            task.status === meta.value
+                              ? 'border-[var(--accent)]/40 bg-[var(--accent-soft)] text-[var(--accent)]'
+                              : 'border-[var(--line)] text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]',
+                          )}
+                        >
+                          <Icon size={12} />
+                          {meta.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <span className="pt-1.5 text-[10.5px] uppercase tracking-[0.12em] text-[var(--faint)]">优先级</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {PRIORITY_META.map((meta) => (
+                      <button
+                        key={meta.value}
+                        onClick={() => void updateTask(task.id, { priority: meta.value })}
+                        className={cn(
+                          'inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] transition',
+                          task.priority === meta.value
+                            ? 'border-[var(--line-strong)] bg-[var(--surface-2)] text-[var(--ink)] shadow-sm'
+                            : 'border-[var(--line)] text-[var(--muted)] hover:bg-[var(--hover)]',
+                        )}
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: meta.color }} />
+                        {meta.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <span className="flex items-center gap-1.5 pt-1.5 text-[10.5px] uppercase tracking-[0.12em] text-[var(--faint)]">
+                    <CalendarClock size={11} /> 截止
+                  </span>
+                  <input
+                    type="datetime-local"
+                    value={toDateTimeInput(task.dueAt)}
+                    onChange={(event) => void updateTask(task.id, { dueAt: fromDateTimeInput(event.target.value) })}
+                    className="h-8 w-fit rounded-lg border border-transparent bg-transparent px-2 text-[12px] text-[var(--ink)] outline-none transition hover:border-[var(--line)] focus:border-[var(--line)] focus:bg-[var(--surface-2)]"
+                  />
+
+                  <span className="flex items-center gap-1.5 pt-1.5 text-[10.5px] uppercase tracking-[0.12em] text-[var(--faint)]">
+                    <Tag size={11} /> 标签
+                  </span>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {task.tags.map((tag) => (
+                      <span key={tag} className="inline-flex h-6 items-center gap-1 rounded-md bg-[var(--surface-2)] px-2 text-[10.5px] text-[var(--muted)] ring-1 ring-[var(--line)]">
+                        {tag}
+                        <button onClick={() => void updateTask(task.id, { tags: task.tags.filter((item) => item !== tag) })} className="text-[var(--faint)] hover:text-red-500">
+                          <X size={10} />
+                        </button>
+                      </span>
+                    ))}
+                    <div className="flex h-6 items-center gap-1 rounded-md border border-dashed border-[var(--line)] px-1.5">
+                      <Plus size={10} className="text-[var(--faint)]" />
+                      <input
+                        value={tagDraft}
+                        onChange={(event) => setTagDraft(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') void addTag();
+                        }}
+                        placeholder="加标签"
+                        className="w-16 bg-transparent text-[10.5px] outline-none placeholder:text-[var(--faint)]"
+                      />
+                    </div>
+                  </div>
+
+                  <span className="flex items-center gap-1.5 pt-1.5 text-[10.5px] uppercase tracking-[0.12em] text-[var(--faint)]">
+                    <Link2 size={11} /> 关联笔记
+                  </span>
+                  <div>
+                    <select
+                      value={task.noteId ?? ''}
+                      onChange={(event) => void updateTask(task.id, { noteId: event.target.value || null })}
+                      className="h-8 max-w-[280px] rounded-lg border border-[var(--line)] bg-[var(--surface-2)] px-2 text-[11.5px] text-[var(--ink)] outline-none"
+                    >
+                      <option value="">未关联</option>
+                      {notes.map((note) => (
+                        <option key={note.id} value={note.id}>
+                          {note.title}
+                        </option>
+                      ))}
+                    </select>
+                    {task.noteInTrash ? <p className="mt-1 text-[10px] text-amber-600">关联笔记在回收站</p> : null}
+                  </div>
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </div>
         <div className="mt-10 flex items-center gap-2 border-t border-[var(--line)] pt-4">
           <span className="text-[10px] text-[var(--faint)]">
             创建于 {new Date(task.createdAt).toLocaleString('zh-CN', { hour12: false })}
@@ -282,4 +336,12 @@ export function TaskDetail() {
 
 function taskViewIsTrash(task: Task): boolean {
   return task.deletedAt !== null;
+}
+
+function readPropertiesCollapsed(): boolean {
+  try {
+    return localStorage.getItem(PROPERTIES_COLLAPSED_KEY) !== 'false';
+  } catch {
+    return true;
+  }
 }

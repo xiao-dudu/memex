@@ -18,7 +18,7 @@ test.beforeEach(async () => {
   mkdirSync(dataDir, { recursive: true });
   app = await electron.launch({
     executablePath: electronPath,
-    args: [appRoot],
+    args: [`--user-data-dir=${resolve(dataDir, 'userdata')}`, appRoot],
     env: { ...process.env, MEMEX_DB_PATH: dbPath },
   });
   page = await app.firstWindow();
@@ -26,7 +26,7 @@ test.beforeEach(async () => {
 });
 
 test.afterEach(async () => {
-  await app.close();
+  if (app) await app.close();
 });
 
 test('creates tasks, edits a note, searches, and exposes MCP config', async () => {

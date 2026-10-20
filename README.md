@@ -29,7 +29,7 @@ pnpm build
 pnpm --filter @memex/app dist
 ```
 
-Windows 安装包输出到 `release/Memex Setup 1.0.0.exe`。
+Windows 安装包输出到 `release/Memex Setup 1.0.1.exe`。
 
 ## 功能
 
