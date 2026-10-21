@@ -2,28 +2,18 @@ import { app, BrowserWindow, net } from 'electron';
 import { basename, join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { buildInstallerInvocation } from './installer-script.js';
+import {
+  buildLatestReleaseUrl,
+  buildReleaseAssetUrl,
+  buildReleasePageUrl,
+  extractFirstReleaseNotes,
+  extractReleaseTag,
+} from './release-discovery.js';
 import { downloadFile, hashFile, removeFile } from './update-io.js';
-import { UpdateService, type UpdateRelease, type UpdateReleaseAsset } from './update-service.js';
+import { parseLatestMetadata, UpdateService, type UpdateRelease, type UpdateReleaseAsset } from './update-service.js';
 
 const DEFAULT_OWNER = 'xiao-dudu';
 const DEFAULT_REPO = 'memex';
-
-interface GitHubAsset {
-  name?: string;
-  browser_download_url?: string;
-  digest?: string | null;
-  size?: number;
-}
-
-interface GitHubRelease {
-  tag_name?: string;
-  name?: string;
-  body?: string;
-  html_url?: string;
-  draft?: boolean;
-  prerelease?: boolean;
-  assets?: GitHubAsset[];
-}
 
 let service: UpdateService | null = null;
 
@@ -42,57 +32,79 @@ function publishState(state: ReturnType<UpdateService['getState']>): void {
   }
 }
 
-function normalizeAsset(asset: GitHubAsset): UpdateReleaseAsset | null {
-  const name = asset.name?.trim();
-  const downloadUrl = asset.browser_download_url;
-  if (!name || !downloadUrl) return null;
-  return { name, downloadUrl, digest: asset.digest ?? null, size: asset.size };
-}
-
-function rateLimitMessage(response: Response): string | null {
+function stripRateLimit(response: Response): string | null {
   if (response.status !== 403 && response.status !== 429) return null;
   if (response.headers.get('x-ratelimit-remaining') !== '0') return null;
   const reset = Number(response.headers.get('x-ratelimit-reset') ?? 0);
-  if (!reset) return 'GitHub API 请求过于频繁，请稍后再试。';
+  if (!reset) return 'GitHub 请求过于频繁，请稍后再试。';
   const minutes = Math.max(1, Math.ceil((reset * 1000 - Date.now()) / 60_000));
-  return `GitHub API 请求次数已达上限，请约 ${minutes} 分钟后重试。`;
+  return `GitHub 请求次数已达上限，请约 ${minutes} 分钟后重试。`;
 }
 
+/**
+ * Resolves the latest release without the GitHub REST API.
+ *
+ * /releases/latest redirects to /releases/tag/<tag>, and release assets live
+ * at a predictable URL, so the updater never touches api.github.com and never
+ * hits the 60 requests/hour anonymous rate limit.
+ */
 async function fetchLatestRelease(): Promise<UpdateRelease | null> {
   if (!app.isPackaged) {
     throw new Error('开发模式不支持自动更新，请使用打包后的应用检查更新。');
   }
 
   const { owner, name } = repo();
-  const response = await net.fetch(`https://api.github.com/repos/${owner}/${name}/releases/latest`, {
-    headers: {
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      'User-Agent': 'Memex-Updater',
-      'Cache-Control': 'no-cache',
-    },
+  const latestResponse = await net.fetch(buildLatestReleaseUrl(owner, name), {
+    redirect: 'follow',
+    headers: { 'User-Agent': 'Memex-Updater', 'Cache-Control': 'no-cache' },
   });
+  const finalUrl = latestResponse.url;
+  await latestResponse.body?.cancel();
 
-  const limited = rateLimitMessage(response);
+  if (latestResponse.status === 404) return null;
+
+  const limited = stripRateLimit(latestResponse);
   if (limited) throw new Error(limited);
-  if (response.status === 404) return null;
-  if (!response.ok) throw new Error(`GitHub 返回 ${response.status}`);
 
-  const data = (await response.json()) as GitHubRelease;
-  if (data.draft || data.prerelease) return null;
+  const tag = extractReleaseTag(finalUrl);
+  if (!tag) {
+    throw new Error(`无法从 GitHub 确定最新版本（HTTP ${latestResponse.status}）`);
+  }
 
-  const tag = data.tag_name?.trim();
-  if (!tag) throw new Error('最新发行版缺少版本标签');
+  const metadataUrl = buildReleaseAssetUrl(owner, name, tag, 'latest.yml');
+  const metadataResponse = await net.fetch(metadataUrl, {
+    headers: { 'User-Agent': 'Memex-Updater', 'Cache-Control': 'no-cache' },
+  });
+  if (!metadataResponse.ok) {
+    throw new Error(`无法读取 latest.yml（HTTP ${metadataResponse.status}）`);
+  }
+  const metadata = parseLatestMetadata(await metadataResponse.text());
+
+  const assets: UpdateReleaseAsset[] = [
+    { name: 'latest.yml', downloadUrl: metadataUrl },
+    {
+      name: metadata.path,
+      downloadUrl: buildReleaseAssetUrl(owner, name, tag, metadata.path),
+    },
+  ];
+
+  const notes = await fetchReleaseNotes(owner, name).catch(() => '');
 
   return {
     tag,
-    name: data.name?.trim() || tag,
-    body: data.body ?? '',
-    htmlUrl: data.html_url ?? `https://github.com/${owner}/${name}/releases/tag/${encodeURIComponent(tag)}`,
-    assets: (data.assets ?? [])
-      .map(normalizeAsset)
-      .filter((asset): asset is UpdateReleaseAsset => asset !== null),
+    name: `Memex ${tag}`,
+    body: notes,
+    htmlUrl: buildReleasePageUrl(owner, name, tag),
+    assets,
   };
+}
+
+async function fetchReleaseNotes(owner: string, name: string): Promise<string> {
+  const response = await net.fetch(`https://github.com/${owner}/${name}/releases.atom`, {
+    headers: { 'User-Agent': 'Memex-Updater' },
+  });
+  if (!response.ok) return '';
+  return extractFirstReleaseNotes(await response.text());
 }
 
 async function fetchText(url: string): Promise<string> {

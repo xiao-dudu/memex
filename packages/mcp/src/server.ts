@@ -127,7 +127,7 @@ export interface CreateMemexServerOptions {
 
 export function createMemexServer({ dbPath }: CreateMemexServerOptions): Server {
   const server = new Server(
-    { name: 'memex', version: '1.1.7' },
+    { name: 'memex', version: '1.1.8' },
     { capabilities: { tools: {} } },
   );
 

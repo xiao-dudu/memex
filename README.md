@@ -29,7 +29,7 @@ pnpm build
 pnpm --filter @memex/app dist
 ```
 
-Windows 安装包输出到 `release/Memex-Setup-1.1.7.exe`。
+Windows 安装包输出到 `release/Memex-Setup-1.1.8.exe`。
 
 ## 自动更新
 
@@ -44,7 +44,7 @@ Windows 安装包输出到 `release/Memex-Setup-1.1.7.exe`。
 
 默认仓库：`xiao-dudu/memex`。可通过 `MEMEX_UPDATE_OWNER` / `MEMEX_UPDATE_REPO` 覆盖。
 
-更新下载使用 Electron 的 `net.fetch`（Chromium 网络栈），因此会遵循 Windows 系统代理 / PAC 设置与 VPN 路由。下载支持断点续传，连接中断后会自动重试并从中断处继续。
+版本发现通过 `/releases/latest` 重定向完成，不调用 GitHub API，因此不受 60 次/小时限流影响。更新下载使用 Electron 的 `net.fetch`（Chromium 网络栈），因此会遵循 Windows 系统代理 / PAC 设置与 VPN 路由。下载支持断点续传，连接中断后会自动重试并从中断处继续。
 
 ## 功能
 
