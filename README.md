@@ -46,6 +46,128 @@ Windows 安装包输出到 `release/Memex-Setup-1.1.14.exe`。
 
 版本发现通过 `/releases/latest` 重定向完成，不调用 GitHub API，因此不受 60 次/小时限流影响。更新下载使用 Electron 的 `net.fetch`（Chromium 网络栈），因此会遵循 Windows 系统代理 / PAC 设置与 VPN 路由。下载支持断点续传，连接中断后会自动重试并从中断处继续。
 
+## 发版流程
+
+发版由 GitHub Actions 完成：推一个 `v*` tag，CI 就会跑测试、构建、打包，并把安装包和 `latest.yml` 上传到对应的 GitHub Release。本地不需要打包。
+
+### 1. 确认工作区干净
+
+```bash
+git status
+```
+
+有未提交改动先提交，否则 tag 会指向旧提交。
+
+### 2. 跑一遍本地验证
+
+```bash
+pnpm typecheck
+pnpm test
+```
+
+CI 会再跑一次，但本地失败能省一轮等待。
+
+### 3. 升版本号
+
+四个 `package.json` 和 MCP server 的版本号必须保持一致：
+
+```text
+package.json
+packages/app/package.json
+packages/shared/package.json
+packages/mcp/package.json
+packages/mcp/src/server.ts   → new Server({ name: 'memex', version: '...' })
+```
+
+用 `pnpm version` 时注意它是单包工具，不要用它批量改 workspace 版本，直接改文件更可控。
+
+### 4. 提交版本号
+
+```bash
+git commit -am "chore(release): v1.1.15"
+```
+
+### 5. 推送代码
+
+```bash
+git push github master
+```
+
+### 6. 打 tag 并推送
+
+```bash
+git tag -a v1.1.15 -m "Memex v1.1.15"
+git push github v1.1.15
+```
+
+tag 必须是 `v` 开头，`release.yml` 的触发条件是 `v*`。
+
+### 7. 等 CI 完成
+
+在 https://github.com/xiao-dudu/memex/actions 查看 `Release` workflow，约 3 分钟。
+
+成功后 Release 里会有三个资产：
+
+```text
+latest.yml
+Memex-Setup-<version>.exe
+Memex-Setup-<version>.exe.blockmap
+```
+
+### 8. 验证
+
+```bash
+# 最新 tag 是否为刚发的版本
+curl.exe -sI -L https://github.com/xiao-dudu/memex/releases/latest | findstr /I location
+```
+
+客户端打开「设置 → 软件更新 → 检查更新」应显示新版本。
+
+### 重跑失败的构建
+
+CI 失败时先进失败的 run 看是哪一步：
+
+| 失败步骤 | 常见原因 |
+| --- | --- |
+| `Typecheck and test` | 代码或测试有问题，本地跑 `pnpm typecheck && pnpm test` 复现 |
+| `Package Windows installer` | 打包配置或依赖问题，本地跑 `pnpm --filter @memex/app exec electron-builder --win nsis --publish never` |
+| `Publish release assets` | 资产文件名与 workflow 的 glob 不匹配 |
+
+`electron-builder` 不要在 CI 里自己发布（会缺 token），必须是 `--publish never`，由 `softprops/action-gh-release` 负责上传。
+
+重跑前要先删掉失败的 tag，否则同一个 tag 不会再次触发 workflow：
+
+```bash
+git tag -d v1.1.15
+git push github :refs/tags/v1.1.15
+git tag -a v1.1.15 -m "Memex v1.1.15"
+git push github v1.1.15
+```
+
+### 只重跑、不改代码
+
+可以在 Actions 页面选 `Release` → `Run workflow`，填入已存在的 tag。注意这种方式不会重新创建 tag，只会基于该 tag 重新构建并上传资产。
+
+### 推送失败时的排查
+
+如果 `git push` 报 `Connection closed by <ip> port 22`，通常是 VPN 拦截了 SSH 的 22 端口。改用 GitHub 的 443 端口：
+
+```bash
+git remote set-url github ssh://git@ssh.github.com:443/xiao-dudu/memex.git
+```
+
+当前仓库的 `github` remote 已经配成这个地址，一般不需要再改。
+
+### 关于版本号
+
+- `latest.yml` 里的 `version` 来自 `packages/app/package.json`，客户端靠它判断是否有新版本
+- 安装包文件名来自 `artifactName`，当前是 `Memex-Setup-${version}.${ext}`
+- 两者必须和 tag 语义一致，但客户端比较的是 `version`，不是 tag 名
+
+### 什么时候不能覆盖 tag
+
+已经发布给用户的 tag 不要重打。tag 变了但版本号没变，客户端会认为没有更新；版本号变了但 tag 没变，`latest.yml` 的下载地址会指向下一个版本，导致 404。发现发错就发一个新版本号。
+
 ## 功能
 
 - 任务：三态、优先级、截止时间、标签、智能视图、回收站
