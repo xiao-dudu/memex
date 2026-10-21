@@ -42,7 +42,7 @@ Windows 安装包输出到 `release/Memex-Setup-1.1.0.exe`。
 
 两者至少存在一个，否则会阻止自动安装。
 
-默认仓库：`duzhilong/memex`。可通过 `MEMEX_UPDATE_OWNER` / `MEMEX_UPDATE_REPO` 覆盖。
+默认仓库：`xiao-dudu/memex`。可通过 `MEMEX_UPDATE_OWNER` / `MEMEX_UPDATE_REPO` 覆盖。
 
 ## 功能
 

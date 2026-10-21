@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { downloadFile, hashFile, removeFile } from './update-io.js';
 import { UpdateService, type UpdateRelease, type UpdateReleaseAsset } from './update-service.js';
 
-const DEFAULT_OWNER = 'duzhilong';
+const DEFAULT_OWNER = 'xiao-dudu';
 const DEFAULT_REPO = 'memex';
 
 interface GitHubAsset {

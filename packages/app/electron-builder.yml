@@ -26,6 +26,6 @@ nsis:
 
 publish:
   provider: github
-  owner: duzhilong
+  owner: xiao-dudu
   repo: memex
 

@@ -28,12 +28,12 @@ function release(overrides: Partial<UpdateRelease> = {}): UpdateRelease {
     tag: 'v1.1.0',
     name: 'Memex v1.1.0',
     body: '新增一键更新',
-    htmlUrl: 'https://github.com/duzhilong/memex/releases/tag/v1.1.0',
+    htmlUrl: 'https://github.com/xiao-dudu/memex/releases/tag/v1.1.0',
     assets: [
-      { name: 'latest.yml', downloadUrl: 'https://github.com/duzhilong/memex/releases/download/v1.1.0/latest.yml' },
+      { name: 'latest.yml', downloadUrl: 'https://github.com/xiao-dudu/memex/releases/download/v1.1.0/latest.yml' },
       {
         name: INSTALLER,
-        downloadUrl: 'https://github.com/duzhilong/memex/releases/download/v1.1.0/Memex.Setup.1.1.0.exe',
+        downloadUrl: 'https://github.com/xiao-dudu/memex/releases/download/v1.1.0/Memex.Setup.1.1.0.exe',
         digest: `sha256:${SHA256}`,
         size: 100,
       },
@@ -160,7 +160,7 @@ describe('UpdateService', () => {
       assets: [
         {
           name: INSTALLER,
-          downloadUrl: 'https://github.com/duzhilong/memex/releases/download/v1.1.0/Memex.Setup.1.1.0.exe',
+          downloadUrl: 'https://github.com/xiao-dudu/memex/releases/download/v1.1.0/Memex.Setup.1.1.0.exe',
         },
       ],
     };
