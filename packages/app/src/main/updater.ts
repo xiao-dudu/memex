@@ -1,6 +1,7 @@
 import { app, BrowserWindow, net } from 'electron';
 import { basename, join } from 'node:path';
 import { spawn } from 'node:child_process';
+import { buildInstallerScript } from './installer-script.js';
 import { downloadFile, hashFile, removeFile } from './update-io.js';
 import { UpdateService, type UpdateRelease, type UpdateReleaseAsset } from './update-service.js';
 
@@ -101,14 +102,11 @@ async function fetchText(url: string): Promise<string> {
 }
 
 function runInstaller(path: string): void {
-  // NSIS cannot reliably replace a running executable. Wait for this process to
-  // exit, install silently, then relaunch the updated binary.
-  const quote = (value: string) => value.replace(/'/g, "''");
-  const script = [
-    `Wait-Process -Id ${process.pid} -ErrorAction SilentlyContinue`,
-    `Start-Process -FilePath '${quote(path)}' -ArgumentList '/S' -Wait`,
-    `Start-Process -FilePath '${quote(process.execPath)}'`,
-  ].join('; ');
+  const script = buildInstallerScript({
+    installerPath: path,
+    appPath: process.execPath,
+    pid: process.pid,
+  });
   const child = spawn('powershell.exe', ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', script], {
     detached: true,
     stdio: 'ignore',
