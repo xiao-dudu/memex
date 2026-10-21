@@ -1,13 +1,15 @@
 /**
  * electron-builder's NSIS installer understands these flags:
  *
- * - `/S`        silent install, no UI
- * - `--updated` update mode: close the running app, install, then relaunch
+ * - `/S`         silent install, no UI
+ * - `--updated`  update mode: close the running app and install in place
+ * - `--force-run` relaunch the app after a silent install
  *
- * `--updated` is what makes the installer safe to launch while the app is
- * still running, so the app never has to coordinate a shutdown by itself.
+ * `--updated` makes the installer safe to launch while the app is running.
+ * `--force-run` is required because this is an assisted installer
+ * (`oneClick: false`): in silent mode it only relaunches when force-run is set.
  */
-export const INSTALLER_ARGS = ['/S', '--updated'] as const;
+export const INSTALLER_ARGS = ['/S', '--updated', '--force-run'] as const;
 
 export interface InstallerInvocation {
   file: string;

@@ -2,16 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { buildInstallerInvocation, INSTALLER_ARGS } from '../installer-script';
 
 describe('installer invocation', () => {
-  it('runs the NSIS installer silently in update mode', () => {
+  it('runs the NSIS installer silently in update mode and relaunches', () => {
     expect(INSTALLER_ARGS).toContain('/S');
     expect(INSTALLER_ARGS).toContain('--updated');
+    // Assisted installers only relaunch after a silent install with --force-run.
+    expect(INSTALLER_ARGS).toContain('--force-run');
   });
 
   it('invokes the downloaded installer with the update flags', () => {
     const invocation = buildInstallerInvocation('C:/Temp/Memex-Setup-1.1.3.exe');
 
     expect(invocation.file).toBe('C:/Temp/Memex-Setup-1.1.3.exe');
-    expect(invocation.args).toEqual(['/S', '--updated']);
+    expect(invocation.args).toEqual(['/S', '--updated', '--force-run']);
   });
 
   it('returns a fresh args array so callers cannot mutate the shared constant', () => {
@@ -19,7 +21,7 @@ describe('installer invocation', () => {
     const second = buildInstallerInvocation('b.exe');
 
     first.args.push('--tampered');
-    expect(second.args).toEqual(['/S', '--updated']);
-    expect(INSTALLER_ARGS).toHaveLength(2);
+    expect(second.args).toEqual(['/S', '--updated', '--force-run']);
+    expect(INSTALLER_ARGS).toHaveLength(3);
   });
 });
