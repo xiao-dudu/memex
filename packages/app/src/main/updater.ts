@@ -120,7 +120,14 @@ export function initUpdateService(): UpdateService {
     currentVersion: () => app.getVersion(),
     fetchLatestRelease,
     fetchText,
-    downloadFile,
+    downloadFile: (url, destination, onProgress) =>
+      downloadFile(url, destination, onProgress, {
+        // Electron's net.fetch uses Chromium's network stack, so Windows
+        // system proxy / PAC settings and VPN routing are honored. Node's
+        // global fetch / https module ignore them.
+        fetchImpl: ((input: RequestInfo | URL, init?: RequestInit) =>
+          net.fetch(input as string, init)) as typeof fetch,
+      }),
     runInstaller,
     quitApp: () => app.quit(),
     hashFile,

@@ -24,6 +24,27 @@ function tempFile(): string {
 }
 
 describe('update IO', () => {
+  it('downloads through the injected fetch implementation', async () => {
+    const payload = Buffer.from('proxy aware payload');
+    const requested: string[] = [];
+    const fetchImpl = (async (url: string | URL | Request) => {
+      requested.push(String(url));
+      return new Response(payload, {
+        status: 200,
+        headers: { 'Content-Length': String(payload.length) },
+      });
+    }) as typeof fetch;
+
+    const destination = tempFile();
+    await downloadFile('https://example.invalid/setup.exe', destination, () => undefined, {
+      fetchImpl,
+    });
+
+    expect(requested).toEqual(['https://example.invalid/setup.exe']);
+    expect(readFileSync(destination)).toEqual(payload);
+    removeFile(destination);
+  });
+
   it('follows redirects, reports progress and hashes the file', async () => {
     const payload = Buffer.from('memex installer payload');
     const server = createServer((request, response) => {
