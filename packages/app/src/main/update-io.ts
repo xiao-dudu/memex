@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream, existsSync, readdirSync, statSync, unlinkSync } from 'node:fs';
+import type { WriteStream } from 'node:fs';
 import { join } from 'node:path';
 import { once } from 'node:events';
 
@@ -7,6 +8,8 @@ export interface DownloadOptions {
   /** Total attempts including the first one. */
   maxAttempts?: number;
   retryDelayMs?: number;
+  /** Abort when no data arrives for this long. */
+  inactivityTimeoutMs?: number;
   /**
    * Fetch implementation used for the transfer. The app passes Electron's
    * net.fetch so system proxy / PAC / VPN settings are honored; tests pass a
@@ -25,7 +28,7 @@ export class RetryableDownloadError extends Error {
 function isRetryable(error: unknown): boolean {
   if (error instanceof RetryableDownloadError) return true;
   if (!(error instanceof Error)) return false;
-  return /ECONNRESET|ETIMEDOUT|EPIPE|ECONNREFUSED|EAI_AGAIN|ENOTFOUND|socket hang up|aborted|premature|closed|fetch failed|network/i.test(
+  return /ECONNRESET|ETIMEDOUT|EPIPE|ECONNREFUSED|EAI_AGAIN|ENOTFOUND|socket hang up|aborted|premature|terminated|closed|fetch failed|network/i.test(
     `${error.name} ${error.message}`,
   );
 }
@@ -46,11 +49,42 @@ function removeQuietly(path: string): void {
   }
 }
 
+/** Flushes buffered chunks so a failed attempt still leaves resumable data. */
+function closeStream(file: WriteStream): Promise<void> {
+  return new Promise((resolve) => {
+    if (file.closed) {
+      resolve();
+      return;
+    }
+    file.once('close', () => resolve());
+    file.once('error', () => resolve());
+    file.end();
+  });
+}
+
+function readWithTimeout(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  timeoutMs: number,
+  controller: AbortController,
+): Promise<ReadableStreamReadResult<Uint8Array>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new RetryableDownloadError('下载超时：长时间没有收到数据'));
+      controller.abort();
+    }, timeoutMs);
+  });
+
+  return Promise.race([reader.read(), timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
 /**
  * Downloads to `destination`, resuming from a partial file when the server
  * honors Range requests. Connections can drop mid-transfer, and restarting a
- * ~95 MB download on every retry is wasteful, so the partial file is kept and
- * reused by the next attempt (and by a later click on "update").
+ * ~95 MB download on every retry is wasteful, so partial bytes are kept on
+ * disk and reused by the next attempt (and by a later click on "update").
  */
 export async function downloadFile(
   url: string,
@@ -60,12 +94,13 @@ export async function downloadFile(
 ): Promise<void> {
   const maxAttempts = Math.max(1, options.maxAttempts ?? 5);
   const retryDelayMs = Math.max(0, options.retryDelayMs ?? 800);
+  const inactivityTimeoutMs = Math.max(1, options.inactivityTimeoutMs ?? 60_000);
   const fetchImpl = options.fetchImpl ?? fetch;
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
-      await downloadAttempt(url, destination, onProgress, fetchImpl);
+      await downloadAttempt(url, destination, onProgress, fetchImpl, inactivityTimeoutMs);
       onProgress(100);
       return;
     } catch (error) {
@@ -75,7 +110,6 @@ export async function downloadFile(
     }
   }
 
-  // Keep the partial file: the next attempt resumes from it via Range.
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
@@ -84,6 +118,7 @@ async function downloadAttempt(
   destination: string,
   onProgress: (percent: number) => void,
   fetchImpl: typeof fetch,
+  inactivityTimeoutMs: number,
 ): Promise<void> {
   const offset = fileSize(destination);
   const headers: Record<string, string> = {
@@ -92,9 +127,10 @@ async function downloadAttempt(
   };
   if (offset > 0) headers.Range = `bytes=${offset}-`;
 
+  const controller = new AbortController();
   let response: Response;
   try {
-    response = await fetchImpl(url, { headers, redirect: 'follow' });
+    response = await fetchImpl(url, { headers, redirect: 'follow', signal: controller.signal });
   } catch (error) {
     throw new RetryableDownloadError('下载连接失败', error);
   }
@@ -124,13 +160,18 @@ async function downloadAttempt(
 
   const file = createWriteStream(destination, { flags: resuming ? 'a' : 'w' });
   const reader = response.body.getReader();
+  let failure: Error | null = null;
 
   try {
     while (true) {
       let chunk: ReadableStreamReadResult<Uint8Array>;
       try {
-        chunk = await reader.read();
+        chunk = await readWithTimeout(reader, inactivityTimeoutMs, controller);
       } catch (error) {
+        if (error instanceof RetryableDownloadError) throw error;
+        if (controller.signal.aborted) {
+          throw new RetryableDownloadError('下载超时：长时间没有收到数据', error);
+        }
         throw new RetryableDownloadError('下载连接被中断', error);
       }
       if (chunk.done) break;
@@ -142,19 +183,22 @@ async function downloadAttempt(
         await once(file, 'drain');
       }
     }
+
+    if (total > 0 && received < total) {
+      throw new RetryableDownloadError(`下载中断：已接收 ${received}/${total} 字节`);
+    }
+  } catch (error) {
+    failure = error instanceof Error ? error : new Error(String(error));
   } finally {
-    reader.releaseLock();
+    try {
+      reader.releaseLock();
+    } catch {
+      // The stream may already be errored.
+    }
   }
 
-  if (total > 0 && received < total) {
-    file.destroy();
-    throw new RetryableDownloadError(`下载中断：已接收 ${received}/${total} 字节`);
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    file.end(() => resolve());
-    file.on('error', reject);
-  });
+  await closeStream(file);
+  if (failure) throw failure;
 }
 
 export async function hashFile(path: string, algorithm: 'sha512' | 'sha256' = 'sha512'): Promise<string> {
@@ -170,7 +214,6 @@ export async function hashFile(path: string, algorithm: 'sha512' | 'sha256' = 's
 export function removeFile(path: string): void {
   removeQuietly(path);
 }
-
 
 /**
  * Removes installers left in the temp directory by previous updates. A running

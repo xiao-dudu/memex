@@ -110,10 +110,10 @@ describe('update IO', () => {
       connections += 1;
       const range = request.headers.range;
       if (connections === 1) {
-        // Announce the full size, send a prefix, then drop the connection.
-        response.writeHead(200, { 'Content-Length': String(payload.length) });
-        response.write(payload.subarray(0, 1024));
-        setTimeout(() => response.destroy(), 20);
+        // Announce the full size, send a prefix, then close before the body is
+        // complete. Ending early is deterministic; a timer would race slow CI.
+        response.writeHead(200, { 'Content-Length': String(payload.length), Connection: 'close' });
+        response.end(payload.subarray(0, 1024));
         return;
       }
       const start = range ? Number(/bytes=(\d+)-/.exec(range)?.[1] ?? 0) : 0;
@@ -144,9 +144,8 @@ describe('update IO', () => {
     const server = createServer((request, response) => {
       connections += 1;
       if (connections === 1) {
-        response.writeHead(200, { 'Content-Length': String(payload.length) });
-        response.write(payload.subarray(0, 512));
-        setTimeout(() => response.destroy(), 20);
+        response.writeHead(200, { 'Content-Length': String(payload.length), Connection: 'close' });
+        response.end(payload.subarray(0, 512));
         return;
       }
       // Deliberately ignores Range and returns the whole body.
@@ -209,12 +208,59 @@ describe('update IO', () => {
     expect(readFileSync(destination)).toEqual(payload);
   });
 
+  it('keeps the bytes received so far when a download fails', async () => {
+    const payload = Buffer.from('p'.repeat(4096));
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { 'Content-Length': String(payload.length), Connection: 'close' });
+      response.end(payload.subarray(0, 1000));
+    });
+    const port = await listen(server);
+
+    const destination = tempFile();
+    await expect(
+      downloadFile(`http://127.0.0.1:${port}/installer`, destination, () => undefined, {
+        maxAttempts: 1,
+      }),
+    ).rejects.toThrow();
+
+    expect(existsSync(destination)).toBe(true);
+    expect(statSync(destination).size).toBe(1000);
+  });
+
+  it('aborts a stalled download after the inactivity timeout', async () => {
+    const sockets: import('node:net').Socket[] = [];
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { 'Content-Length': '4096' });
+      response.write(Buffer.from('s'.repeat(64)));
+      // Never end: the body simply stops arriving.
+    });
+    server.on('connection', (socket) => sockets.push(socket));
+    const port = await listen(server);
+
+    const destination = tempFile();
+    const started = Date.now();
+    let captured: unknown;
+    try {
+      await downloadFile(`http://127.0.0.1:${port}/installer`, destination, () => undefined, {
+        maxAttempts: 1,
+        inactivityTimeoutMs: 150,
+      });
+    } catch (error) {
+      captured = error;
+    }
+
+    expect(captured).toBeInstanceOf(Error);
+    expect((captured as Error).message).toMatch(/超时/);
+
+    expect(Date.now() - started).toBeLessThan(5000);
+    for (const socket of sockets) socket.destroy();
+  });
+
   it('fails after exhausting retry attempts and keeps the partial file for resume', async () => {
     const payload = Buffer.from('z'.repeat(1024));
     const server = createServer((_request, response) => {
-      response.writeHead(200, { 'Content-Length': String(payload.length) });
-      response.write(payload.subarray(0, 128));
-      setTimeout(() => response.destroy(), 10);
+      response.writeHead(200, { 'Content-Length': String(payload.length), Connection: 'close' });
+      response.end(payload.subarray(0, 128));
     });
     const port = await listen(server);
 
