@@ -32,21 +32,65 @@ function publishState(state: ReturnType<UpdateService['getState']>): void {
   }
 }
 
-function stripRateLimit(response: Response): string | null {
-  if (response.status !== 403 && response.status !== 429) return null;
-  if (response.headers.get('x-ratelimit-remaining') !== '0') return null;
-  const reset = Number(response.headers.get('x-ratelimit-reset') ?? 0);
-  if (!reset) return 'GitHub 请求过于频繁，请稍后再试。';
-  const minutes = Math.max(1, Math.ceil((reset * 1000 - Date.now()) / 60_000));
-  return `GitHub 请求次数已达上限，请约 ${minutes} 分钟后重试。`;
+function resolveLatestTag(owner: string, name: string): Promise<string | null> {
+  const url = buildLatestReleaseUrl(owner, name);
+
+  return new Promise((resolve, reject) => {
+    const request = net.request({ method: 'HEAD', url, redirect: 'manual' });
+    let settled = false;
+    const finish = (value: string | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
+
+    const timer = setTimeout(() => {
+      try {
+        request.abort();
+      } catch {
+        // Already finished.
+      }
+      fail(new Error('连接 GitHub 超时'));
+    }, 30_000);
+
+    request.on('redirect', (_status, _method, redirectUrl) => {
+      clearTimeout(timer);
+      finish(extractReleaseTag(redirectUrl));
+      try {
+        request.abort();
+      } catch {
+        // Abort is best-effort.
+      }
+    });
+
+    request.on('response', (response) => {
+      clearTimeout(timer);
+      const status = response.statusCode;
+      response.on('data', () => undefined);
+      response.on('end', () => finish(status === 404 ? null : null));
+      response.on('error', (error) => fail(error));
+    });
+
+    request.on('error', (error) => {
+      clearTimeout(timer);
+      fail(error);
+    });
+
+    request.end();
+  });
 }
 
 /**
  * Resolves the latest release without the GitHub REST API.
  *
- * /releases/latest redirects to /releases/tag/<tag>, and release assets live
- * at a predictable URL, so the updater never touches api.github.com and never
- * hits the 60 requests/hour anonymous rate limit.
+ * A HEAD request to /releases/latest emits a redirect to /releases/tag/<tag>;
+ * release assets then live at predictable URLs. This avoids the anonymous API
+ * quota entirely, which matters on shared/VPN exit IPs.
  */
 async function fetchLatestRelease(): Promise<UpdateRelease | null> {
   if (!app.isPackaged) {
@@ -54,22 +98,8 @@ async function fetchLatestRelease(): Promise<UpdateRelease | null> {
   }
 
   const { owner, name } = repo();
-  const latestResponse = await net.fetch(buildLatestReleaseUrl(owner, name), {
-    redirect: 'follow',
-    headers: { 'User-Agent': 'Memex-Updater', 'Cache-Control': 'no-cache' },
-  });
-  const finalUrl = latestResponse.url;
-  await latestResponse.body?.cancel();
-
-  if (latestResponse.status === 404) return null;
-
-  const limited = stripRateLimit(latestResponse);
-  if (limited) throw new Error(limited);
-
-  const tag = extractReleaseTag(finalUrl);
-  if (!tag) {
-    throw new Error(`无法从 GitHub 确定最新版本（HTTP ${latestResponse.status}）`);
-  }
+  const tag = await resolveLatestTag(owner, name);
+  if (!tag) return null;
 
   const metadataUrl = buildReleaseAssetUrl(owner, name, tag, 'latest.yml');
   const metadataResponse = await net.fetch(metadataUrl, {
