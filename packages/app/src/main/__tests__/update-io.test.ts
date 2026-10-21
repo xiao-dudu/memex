@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from '
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { downloadFile, hashFile, removeFile } from '../update-io';
+import { cleanupOldInstallers, downloadFile, hashFile, removeFile } from '../update-io';
 
 const servers: ReturnType<typeof createServer>[] = [];
 
@@ -23,7 +23,35 @@ function tempFile(): string {
   return join(mkdtempSync(join(tmpdir(), 'memex-update-')), 'setup.exe');
 }
 
+describe('cleanupOldInstallers', () => {
+  it('removes stale update installers but keeps recent ones', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'memex-cleanup-'));
+    const stale = join(dir, 'memex-update-1.0.0-Memex-Setup-1.0.0.exe');
+    const fresh = join(dir, 'memex-update-1.1.0-Memex-Setup-1.1.0.exe');
+    const unrelated = join(dir, 'notes.txt');
+    writeFileSync(stale, 'old');
+    writeFileSync(fresh, 'new');
+    writeFileSync(unrelated, 'keep');
+
+    const now = Date.now();
+    const removed = cleanupOldInstallers(dir, now, 60 * 60 * 1000, (path) => {
+      if (path === stale) return now - 2 * 60 * 60 * 1000;
+      return now;
+    });
+
+    expect(removed).toEqual([stale]);
+    expect(existsSync(stale)).toBe(false);
+    expect(existsSync(fresh)).toBe(true);
+    expect(existsSync(unrelated)).toBe(true);
+  });
+
+  it('ignores a missing temp directory', () => {
+    expect(cleanupOldInstallers(join(tmpdir(), 'memex-definitely-missing'), Date.now(), 1000)).toEqual([]);
+  });
+});
+
 describe('update IO', () => {
+
   it('downloads through the injected fetch implementation', async () => {
     const payload = Buffer.from('proxy aware payload');
     const requested: string[] = [];

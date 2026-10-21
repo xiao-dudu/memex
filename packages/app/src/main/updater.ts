@@ -9,7 +9,7 @@ import {
   extractFirstReleaseNotes,
   extractReleaseTag,
 } from './release-discovery.js';
-import { downloadFile, hashFile, removeFile } from './update-io.js';
+import { cleanupOldInstallers, downloadFile, hashFile, removeFile } from './update-io.js';
 import { parseLatestMetadata, UpdateService, type UpdateRelease, type UpdateReleaseAsset } from './update-service.js';
 
 const DEFAULT_OWNER = 'xiao-dudu';
@@ -157,6 +157,10 @@ function runInstaller(path: string): void {
 
 export function initUpdateService(): UpdateService {
   if (service) return service;
+
+  // A successfully installed update leaves its installer in the temp folder;
+  // delete leftovers from earlier runs now that nothing is using them.
+  cleanupOldInstallers(app.getPath('temp'), Date.now(), 60 * 60 * 1000);
 
   service = new UpdateService({
     currentVersion: () => app.getVersion(),

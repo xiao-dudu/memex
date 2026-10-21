@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { createReadStream, createWriteStream, statSync, unlinkSync } from 'node:fs';
+import { createReadStream, createWriteStream, existsSync, readdirSync, statSync, unlinkSync } from 'node:fs';
+import { join } from 'node:path';
 import { once } from 'node:events';
 
 export interface DownloadOptions {
@@ -168,4 +169,32 @@ export async function hashFile(path: string, algorithm: 'sha512' | 'sha256' = 's
 
 export function removeFile(path: string): void {
   removeQuietly(path);
+}
+
+
+/**
+ * Removes installers left in the temp directory by previous updates. A running
+ * installer cannot be deleted, so cleanup happens on the next app start.
+ */
+export function cleanupOldInstallers(
+  tempDir: string,
+  now: number = Date.now(),
+  maxAgeMs: number = 24 * 60 * 60 * 1000,
+  mtime: (path: string) => number = (path) => statSync(path).mtimeMs,
+): string[] {
+  if (!existsSync(tempDir)) return [];
+
+  const removed: string[] = [];
+  for (const name of readdirSync(tempDir)) {
+    if (!name.startsWith('memex-update-')) continue;
+    const path = join(tempDir, name);
+    try {
+      if (now - mtime(path) < maxAgeMs) continue;
+      unlinkSync(path);
+      removed.push(path);
+    } catch {
+      // Locked by a running installer or already gone; try again next launch.
+    }
+  }
+  return removed;
 }
