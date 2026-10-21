@@ -16,6 +16,7 @@ import {
 } from '@memex/shared';
 import { getDbPath, getRepositories } from './db.js';
 import { buildMcpConfig, backupNow, copyMcpConfig, exportJson } from './data.js';
+import { getUpdateService } from './updater.js';
 import { getMainWindow, showMainWindow } from './windows/main.js';
 import { hideQuickCapture } from './windows/quick-capture.js';
 
@@ -97,6 +98,10 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.appCopyMcpConfig, () => copyMcpConfig());
   ipcMain.handle(IPC.appBackupNow, () => backupNow());
   ipcMain.handle(IPC.appExportJson, () => exportJson());
+
+  ipcMain.handle(IPC.updateCheck, () => getUpdateService().check());
+  ipcMain.handle(IPC.updateInstall, () => getUpdateService().install());
+  ipcMain.handle(IPC.updateGetState, () => getUpdateService().getState());
 
   ipcMain.handle(IPC.windowShowMain, () => showMainWindow());
   ipcMain.handle(IPC.windowHideQuickCapture, () => hideQuickCapture());

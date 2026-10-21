@@ -36,6 +36,16 @@ const api: MemexApi = {
     backupNow: () => ipcRenderer.invoke(IPC.appBackupNow),
     exportJson: () => ipcRenderer.invoke(IPC.appExportJson),
   },
+  update: {
+    check: () => ipcRenderer.invoke(IPC.updateCheck),
+    install: () => ipcRenderer.invoke(IPC.updateInstall),
+    getState: () => ipcRenderer.invoke(IPC.updateGetState),
+    onState: (callback) => {
+      const listener = (_event: Electron.IpcRendererEvent, state: Parameters<typeof callback>[0]) => callback(state);
+      ipcRenderer.on(IPC.updateState, listener);
+      return () => ipcRenderer.removeListener(IPC.updateState, listener);
+    },
+  },
   window: {
     showMain: () => ipcRenderer.invoke(IPC.windowShowMain),
     hideQuickCapture: () => ipcRenderer.invoke(IPC.windowHideQuickCapture),

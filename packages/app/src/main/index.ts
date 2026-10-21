@@ -1,12 +1,21 @@
 import { app, BrowserWindow } from 'electron';
+import { resolve } from 'node:path';
+import { mkdirSync } from 'node:fs';
 import { closeDatabase, getRepositories, initDatabase } from './db.js';
 import { registerIpcHandlers } from './ipc.js';
 import { maybeDailyBackup } from './data.js';
 import { createMainWindow, getMainWindow, showMainWindow } from './windows/main.js';
 import { destroyTray, createTray } from './system/tray.js';
 import { registerShortcuts, unregisterShortcuts } from './system/shortcuts.js';
+import { initUpdateService } from './updater.js';
 
 let quitting = false;
+
+if (process.env.MEMEX_USER_DATA) {
+  const userData = resolve(process.env.MEMEX_USER_DATA);
+  mkdirSync(userData, { recursive: true });
+  app.setPath('userData', userData);
+}
 
 const hasLock = app.requestSingleInstanceLock();
 if (!hasLock) {
@@ -17,6 +26,7 @@ if (!hasLock) {
   app.whenReady().then(async () => {
     app.setAppUserModelId('com.memex.desktop');
     initDatabase();
+    initUpdateService();
     registerIpcHandlers();
 
     const window = createMainWindow();

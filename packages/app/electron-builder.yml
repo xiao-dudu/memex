@@ -1,5 +1,6 @@
 appId: com.memex.desktop
 productName: Memex
+artifactName: "${productName}-Setup-${version}.${ext}"
 directories:
   output: ../../release
   buildResources: resources
@@ -22,3 +23,9 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
+
+publish:
+  provider: github
+  owner: duzhilong
+  repo: memex
+

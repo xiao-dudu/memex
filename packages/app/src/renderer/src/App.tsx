@@ -69,8 +69,8 @@ export default function App() {
         if (settingsOpen) setSettingsOpen(false);
       }
     };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [module, searchOpen, settingsOpen, setSearchOpen, setSettingsOpen, createTask, createNote]);
 
   return (

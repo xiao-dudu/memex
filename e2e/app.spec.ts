@@ -18,8 +18,8 @@ test.beforeEach(async () => {
   mkdirSync(dataDir, { recursive: true });
   app = await electron.launch({
     executablePath: electronPath,
-    args: [`--user-data-dir=${resolve(dataDir, 'userdata')}`, appRoot],
-    env: { ...process.env, MEMEX_DB_PATH: dbPath },
+    args: [appRoot],
+    env: { ...process.env, MEMEX_DB_PATH: dbPath, MEMEX_USER_DATA: resolve(dataDir, 'userdata') },
   });
   page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');

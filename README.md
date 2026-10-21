@@ -29,7 +29,20 @@ pnpm build
 pnpm --filter @memex/app dist
 ```
 
-Windows 安装包输出到 `release/Memex Setup 1.0.1.exe`。
+Windows 安装包输出到 `release/Memex-Setup-1.1.0.exe`。
+
+## 自动更新
+
+应用内「设置 → 软件更新」可以检查 GitHub Releases 上的新版本，并一键下载、校验、静默安装和重启。
+
+更新器使用两种校验来源：
+
+- Release 中的 `latest.yml`（sha512）
+- GitHub Release 资产自带的 `digest`（sha256）
+
+两者至少存在一个，否则会阻止自动安装。
+
+默认仓库：`duzhilong/memex`。可通过 `MEMEX_UPDATE_OWNER` / `MEMEX_UPDATE_REPO` 覆盖。
 
 ## 功能
 
@@ -39,6 +52,7 @@ Windows 安装包输出到 `release/Memex Setup 1.0.1.exe`。
 - 快速捕获：`Ctrl+Shift+Space`，默认任务，`Ctrl+2` 切笔记
 - 本地数据：自动保存、每日备份（保留 7 份）、JSON 导出
 - MCP：只读任务工具；设置开启后可只读笔记全文
+- 自动更新：GitHub Releases，检查、下载、校验、安装一步完成
 
 ## MCP 配置
 

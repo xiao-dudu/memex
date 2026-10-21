@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Check, Clipboard, Database, ExternalLink, HardDrive, Moon, Sun, X } from 'lucide-react';
+import { Check, Clipboard, Database, Download, ExternalLink, HardDrive, Moon, RefreshCw, Sun, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import type { AppInfo, McpAccessMode, ThemeMode } from '@memex/shared';
+import type { AppInfo, McpAccessMode, ThemeMode, UpdateState } from '@memex/shared';
 import { useAppStore } from '../../store/useAppStore';
 import { Button } from '../ui/button';
 import { cn } from '../ui/utils';
@@ -11,10 +11,13 @@ export function SettingsDialog() {
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [copied, setCopied] = useState(false);
   const [actionResult, setActionResult] = useState('');
+  const [updateState, setUpdateState] = useState<UpdateState | null>(null);
 
   useEffect(() => {
     if (!settingsOpen) return;
     void window.memex.app.info().then(setInfo);
+    void window.memex.update.getState().then(setUpdateState);
+    return window.memex.update.onState(setUpdateState);
   }, [settingsOpen]);
 
   useEffect(() => {
@@ -27,6 +30,30 @@ export function SettingsDialog() {
   }, [settingsOpen, setSettingsOpen]);
 
   if (!settings) return null;
+
+  const checkForUpdates = async () => {
+    try {
+      setUpdateState(await window.memex.update.check());
+    } catch (error) {
+      setUpdateState({
+        phase: 'error',
+        currentVersion: info?.version ?? '',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  const installUpdate = async () => {
+    try {
+      setUpdateState(await window.memex.update.install());
+    } catch (error) {
+      setUpdateState({
+        phase: 'error',
+        currentVersion: info?.version ?? '',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
 
   const setMode = (mode: McpAccessMode) => void updateSettings({ mcpAccessMode: mode });
   const setTheme = (theme: ThemeMode) => void updateSettings({ theme });
@@ -124,6 +151,76 @@ export function SettingsDialog() {
                   </Button>
                 </div>
                 {actionResult ? <p className="mt-2 break-all text-[10px] text-[var(--muted)]">{actionResult}</p> : null}
+              </Section>
+
+              <Section title="软件更新" description="从 GitHub Releases 检查新版本，下载完成后自动重启安装。">
+                <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--accent-soft)] text-[var(--accent)]">
+                      <Download size={16} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="text-[11.5px] font-medium">Memex v{info?.version ?? updateState?.currentVersion ?? '—'}</p>
+                        {updateState?.latestVersion && updateState.phase === 'available' ? (
+                          <span className="rounded-full bg-[var(--accent-soft)] px-2 py-0.5 text-[9px] font-medium text-[var(--accent)]">
+                            可更新至 v{updateState.latestVersion}
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="mt-1 text-[10px] leading-5 text-[var(--faint)]">
+                        {updateState?.message ?? '尚未检查更新。'}
+                      </p>
+                      {updateState?.phase === 'downloading' || updateState?.phase === 'downloaded' ? (
+                        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--line)]">
+                          <motion.div
+                            className="h-full rounded-full bg-[var(--accent)]"
+                            initial={{ width: 0 }}
+                            animate={{ width: `${updateState.progress ?? 0}%` }}
+                            transition={{ duration: 0.2 }}
+                          />
+                        </div>
+                      ) : null}
+                      {updateState?.notes && (updateState.phase === 'available' || updateState.phase === 'up-to-date') ? (
+                        <div className="thin-scroll mt-2 max-h-24 overflow-y-auto whitespace-pre-wrap rounded-lg bg-[var(--hover)] px-2.5 py-2 text-[9.5px] leading-5 text-[var(--muted)]">
+                          {updateState.notes}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <Button
+                      variant={updateState?.phase === 'available' ? 'accent' : 'outline'}
+                      size="sm"
+                      disabled={
+                        updateState?.phase === 'checking' ||
+                        updateState?.phase === 'downloading' ||
+                        updateState?.phase === 'downloaded'
+                      }
+                      onClick={() => void (updateState?.phase === 'available' ? installUpdate() : checkForUpdates())}
+                    >
+                      {updateState?.phase === 'available' ? <Download size={13} /> : <RefreshCw size={13} className={updateState?.phase === 'checking' ? 'animate-spin' : ''} />}
+                      {updateState?.phase === 'available'
+                        ? `一键更新到 v${updateState.latestVersion}`
+                        : updateState?.phase === 'checking'
+                          ? '检查中…'
+                          : updateState?.phase === 'downloading'
+                            ? `下载中 ${updateState.progress ?? 0}%`
+                            : updateState?.phase === 'downloaded'
+                              ? '正在重启安装…'
+                              : '检查更新'}
+                    </Button>
+                    {updateState?.releaseUrl ? (
+                      <button
+                        onClick={() => window.open(updateState.releaseUrl, '_blank')}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-[10px] text-[var(--faint)] transition hover:bg-[var(--hover)] hover:text-[var(--ink)]"
+                      >
+                        <ExternalLink size={11} /> 查看发布说明
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
               </Section>
 
               <Section title="桌面行为" description="决定窗口和快速记录的行为。">

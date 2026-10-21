@@ -144,3 +144,23 @@ export interface ExportBundle {
   taskTags: unknown[];
   noteTags: unknown[];
 }
+
+export type UpdatePhase =
+  | 'idle'
+  | 'checking'
+  | 'up-to-date'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'no-release'
+  | 'error';
+
+export interface UpdateState {
+  phase: UpdatePhase;
+  currentVersion: string;
+  latestVersion?: string;
+  releaseUrl?: string;
+  notes?: string;
+  progress?: number;
+  message?: string;
+}

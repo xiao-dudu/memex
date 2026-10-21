@@ -14,6 +14,7 @@ import type {
   TaskFilter,
   TaskInput,
   TaskPatch,
+  UpdateState,
 } from './types.js';
 
 export interface MemexApi {
@@ -51,6 +52,12 @@ export interface MemexApi {
     backupNow(): Promise<string>;
     exportJson(): Promise<string>;
   };
+  update: {
+    check(): Promise<UpdateState>;
+    install(): Promise<UpdateState>;
+    getState(): Promise<UpdateState>;
+    onState(callback: (state: UpdateState) => void): () => void;
+  };
   window: {
     showMain(): Promise<void>;
     hideQuickCapture(): Promise<void>;
@@ -83,6 +90,10 @@ export const IPC = {
   appCopyMcpConfig: 'app:copy-mcp-config',
   appBackupNow: 'app:backup-now',
   appExportJson: 'app:export-json',
+  updateCheck: 'update:check',
+  updateInstall: 'update:install',
+  updateGetState: 'update:get-state',
+  updateState: 'update:state',
   windowShowMain: 'window:show-main',
   windowHideQuickCapture: 'window:hide-quick-capture',
   windowSetTheme: 'window:set-theme',
