@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build and publish, e.g. v1.1.0'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck and test
+        run: |
+          pnpm typecheck
+          pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - name: Package Windows installer
+        run: pnpm --filter @memex/app exec electron-builder --win nsis
+
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: Memex ${{ github.event.inputs.tag || github.ref_name }}
+          fail_on_unmatched_files: true
+          files: |
+            release/Memex-Setup-*.exe
+            release/Memex-Setup-*.exe.blockmap
+            release/latest.yml
