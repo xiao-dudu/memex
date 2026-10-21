@@ -47,7 +47,7 @@ export interface UpdateServiceDependencies {
   quitApp: UpdateAdapter['quitApp'];
   hashFile: (path: string, algorithm: ChecksumAlgorithm) => Promise<string>;
   removeFile: (path: string) => void;
-  tempPath: (name: string) => string;
+  tempPath: (name: string, version: string) => string;
   onState: (state: UpdateState) => void;
   installDelayMs?: number;
 }
@@ -130,6 +130,10 @@ export function parseDigest(digest: string | null | undefined): Checksum | null 
 
 function normalizeVersion(tag: string): string {
   return tag.trim().replace(/^v/i, '');
+}
+
+function metadataVersion(pending: PendingUpdate): string {
+  return normalizeVersion(pending.release.tag);
 }
 
 function findAsset(release: UpdateRelease, fileName: string): UpdateReleaseAsset | undefined {
@@ -262,7 +266,7 @@ export class UpdateService {
     }
 
     const { installer, checksum } = this.pending;
-    const destination = this.dependencies.tempPath(installer.name);
+    const destination = this.dependencies.tempPath(installer.name, metadataVersion(this.pending));
     this.emit({ phase: 'downloading', progress: 0, message: '正在下载更新…' });
 
     try {

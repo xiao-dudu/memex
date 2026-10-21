@@ -29,7 +29,7 @@ pnpm build
 pnpm --filter @memex/app dist
 ```
 
-Windows 安装包输出到 `release/Memex-Setup-1.1.3.exe`。
+Windows 安装包输出到 `release/Memex-Setup-1.1.4.exe`。
 
 ## 自动更新
 

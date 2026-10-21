@@ -1,7 +1,7 @@
 import { app, BrowserWindow, net } from 'electron';
 import { basename, join } from 'node:path';
 import { spawn } from 'node:child_process';
-import { buildInstallerScript } from './installer-script.js';
+import { buildInstallerInvocation } from './installer-script.js';
 import { downloadFile, hashFile, removeFile } from './update-io.js';
 import { UpdateService, type UpdateRelease, type UpdateReleaseAsset } from './update-service.js';
 
@@ -102,16 +102,14 @@ async function fetchText(url: string): Promise<string> {
 }
 
 function runInstaller(path: string): void {
-  const script = buildInstallerScript({
-    installerPath: path,
-    appPath: process.execPath,
-    pid: process.pid,
-  });
-  const child = spawn('powershell.exe', ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', script], {
+  // `--updated` makes NSIS close the running app, install silently and
+  // relaunch afterwards, so no helper process has to survive our exit.
+  const invocation = buildInstallerInvocation(path);
+  const child = spawn(invocation.file, invocation.args, {
     detached: true,
     stdio: 'ignore',
-    windowsHide: true,
   });
+  child.on('error', (error) => console.error('Failed to start installer', error));
   child.unref();
 }
 
@@ -127,7 +125,7 @@ export function initUpdateService(): UpdateService {
     quitApp: () => app.quit(),
     hashFile,
     removeFile,
-    tempPath: (name) => join(app.getPath('temp'), `memex-update-${Date.now()}-${basename(name)}`),
+    tempPath: (name, version) => join(app.getPath('temp'), `memex-update-${version}-${basename(name)}`),
     onState: publishState,
     installDelayMs: 1200,
   });
