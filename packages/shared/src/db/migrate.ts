@@ -1,6 +1,6 @@
 import type { MemexDatabase } from './database.js';
 
-export const LATEST_SCHEMA_VERSION = 1;
+export const LATEST_SCHEMA_VERSION = 2;
 
 interface Migration {
   version: number;
@@ -120,7 +120,34 @@ INSERT OR IGNORE INTO settings(key, value) VALUES
   ('last_backup_at', '0');
 `;
 
-export const MIGRATIONS: Migration[] = [{ version: 1, sql: MIGRATION_1 }];
+const MIGRATION_2 = `
+CREATE TABLE IF NOT EXISTS report_templates (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, base_prompt TEXT NOT NULL,
+  sections_json TEXT NOT NULL, constraints TEXT NOT NULL DEFAULT '', is_builtin INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_report_templates_name ON report_templates(name);
+CREATE TABLE IF NOT EXISTS reports (
+  id TEXT PRIMARY KEY, title TEXT NOT NULL, period_start INTEGER NOT NULL, period_end INTEGER NOT NULL,
+  template_id TEXT, template_snapshot_json TEXT NOT NULL, tasks_snapshot_json TEXT NOT NULL,
+  notes_snapshot_json TEXT NOT NULL, content_markdown TEXT NOT NULL, generation_meta_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_reports_created ON reports(created_at DESC);
+INSERT OR IGNORE INTO report_templates(
+  id, name, description, base_prompt, sections_json, constraints, is_builtin, created_at, updated_at
+) VALUES (
+  '00000000-0000-4000-8000-000000000001', '默认周报模板', '通用工作周报结构',
+  '请根据提供的任务和笔记，用简洁、专业、面向结果的中文总结本周工作。',
+  '[{"id":"done","title":"本周完成","instruction":"总结已完成工作和结果","allowEmpty":false},{"id":"doing","title":"进行中工作","instruction":"说明当前进展和下一步","allowEmpty":true},{"id":"risks","title":"风险与阻塞","instruction":"列出风险、阻塞和需要支持的事项；没有则写暂无","allowEmpty":true},{"id":"next","title":"下周计划","instruction":"根据现有任务整理下周计划","allowEmpty":true}]',
+  '不得编造未提供的成果或数据。', 1, 0, 0
+);
+`;
+
+export const MIGRATIONS: Migration[] = [
+  { version: 1, sql: MIGRATION_1 },
+  { version: 2, sql: MIGRATION_2 },
+];
 
 export function getSchemaVersion(db: MemexDatabase): number {
   const exists = db

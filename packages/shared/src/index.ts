@@ -20,3 +20,5 @@ export { tagColor, TAG_COLORS } from './repositories/tag-color.js';
 
 export { backupDatabase, listBackups, pruneBackups, timestampForFile } from './backup.js';
 export { exportAll, purgeExpiredTrash } from './export.js';
+export * from './reports/types.js';
+export * from './reports/validation.js';
