@@ -482,8 +482,8 @@ export function NewReportWizard() {
                 <Button variant="ghost" size="sm" onClick={() => setConfirmOpen(false)}>
                   返回调整
                 </Button>
-                <Button variant="accent" size="sm" onClick={() => void generate()}>
-                  确认发送
+                <Button variant="accent" size="sm" disabled={aiLoading} onClick={() => void generate()}>
+                  {aiLoading ? '正在刷新配置…' : '确认发送'}
                 </Button>
               </div>
             </section>
