@@ -14,7 +14,7 @@ import type {
 } from '@memex/shared';
 import { emptyDocument } from '../lib/tiptap';
 
-export type AppModule = 'tasks' | 'notes';
+export type AppModule = 'tasks' | 'notes' | 'reports';
 
 interface AppState {
   module: AppModule;
@@ -311,3 +311,4 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ settings });
   },
 }));
+

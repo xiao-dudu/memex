@@ -7,9 +7,12 @@ import { TaskList } from './components/tasks/TaskList';
 import { TaskDetail } from './components/tasks/TaskDetail';
 import { NoteList } from './components/notes/NoteList';
 import { NoteDetail } from './components/notes/NoteDetail';
+import { ReportList } from './components/reports/ReportList';
+import { ReportWorkspace } from './components/reports/ReportWorkspace';
 import { SearchPalette } from './components/search/SearchPalette';
 import { SettingsDialog } from './components/settings/SettingsDialog';
 import { useAppStore } from './store/useAppStore';
+import { useReportStore } from './store/useReportStore';
 
 export default function App() {
   const {
@@ -31,6 +34,7 @@ export default function App() {
     searchOpen,
     settingsOpen,
   } = useAppStore();
+  const startNewReport = useReportStore((state) => state.startNewReport);
 
   useEffect(() => {
     void bootstrap();
@@ -61,6 +65,7 @@ export default function App() {
         event.preventDefault();
         if (event.shiftKey) void createNote();
         else if (module === 'tasks') void createTask('未命名任务');
+        else if (module === 'reports') startNewReport();
         else void createNote();
         return;
       }
@@ -71,7 +76,13 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [module, searchOpen, settingsOpen, setSearchOpen, setSettingsOpen, createTask, createNote]);
+  }, [module, searchOpen, settingsOpen, setSearchOpen, setSettingsOpen, createTask, createNote, startNewReport]);
+
+  const createCurrent = () => {
+    if (module === 'tasks') void createTask('未命名任务');
+    else if (module === 'notes') void createNote();
+    else startNewReport();
+  };
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-[var(--bg)] text-[var(--ink)]">
@@ -94,7 +105,7 @@ export default function App() {
               transition={{ duration: 0.16 }}
               className="flex min-h-0"
             >
-              {module === 'tasks' ? <TaskList /> : <NoteList />}
+              {module === 'tasks' ? <TaskList /> : module === 'notes' ? <NoteList /> : <ReportList />}
             </motion.div>
           ) : (
             <motion.div
@@ -112,7 +123,7 @@ export default function App() {
                 <ChevronRight size={14} />
               </button>
               <button
-                onClick={() => void (module === 'tasks' ? createTask('未命名任务') : createNote())}
+                onClick={createCurrent}
                 className="mt-2 flex h-7 w-7 items-center justify-center rounded-md text-[var(--faint)] transition hover:bg-[var(--hover)] hover:text-[var(--accent)]"
                 title="新建"
               >
@@ -122,7 +133,7 @@ export default function App() {
           )}
         </AnimatePresence>
 
-        {module === 'tasks' ? <TaskDetail /> : <NoteDetail />}
+        {module === 'tasks' ? <TaskDetail /> : module === 'notes' ? <NoteDetail /> : <ReportWorkspace />}
       </div>
 
       <SearchPalette />
