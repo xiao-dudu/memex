@@ -5,6 +5,7 @@ import type { AppInfo, McpAccessMode, ThemeMode, UpdateState } from '@memex/shar
 import { useAppStore } from '../../store/useAppStore';
 import { Button } from '../ui/button';
 import { cn } from '../ui/utils';
+import { AiServiceSettings } from './AiServiceSettings';
 
 export function SettingsDialog() {
   const { settingsOpen, setSettingsOpen, settings, updateSettings } = useAppStore();
@@ -90,6 +91,10 @@ export function SettingsDialog() {
                   <ThemeButton icon={Moon} label="深色" active={settings.theme === 'dark'} onClick={() => setTheme('dark')} />
                   <ThemeButton icon={Database} label="跟随系统" active={settings.theme === 'system'} onClick={() => setTheme('system')} />
                 </div>
+              </Section>
+
+              <Section title="AI 服务" description="配置周报生成使用的 OpenAI 兼容服务。">
+                <AiServiceSettings />
               </Section>
 
               <Section title="AI 访问权限" description="控制 MCP 客户端能读取哪些本地内容。">
@@ -325,3 +330,4 @@ function ToggleRow({ label, checked, onChange }: { label: string; checked: boole
     </div>
   );
 }
+
