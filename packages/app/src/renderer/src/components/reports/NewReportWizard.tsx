@@ -215,7 +215,7 @@ export function NewReportWizard() {
   };
 
   const generate = async () => {
-    if (!period || !selectedTemplate || selectedTasks.length === 0 || !aiConfigured || generating) return;
+    if (!period || !selectedTemplate || selectedTasks.length === 0 || !aiConfigured || aiLoading || generating) return;
     cancelledByUser.current = false;
     setConfirmOpen(false);
     setGenerating(true);
@@ -227,6 +227,7 @@ export function NewReportWizard() {
         templateId: selectedTemplate.id,
         taskIds: selectedTasks.map((task) => task.id),
         includeNotes,
+        aiConfigRevision: aiConfig!.revision,
       });
       setGenerating(false);
       setActiveReport(report);
@@ -241,7 +242,9 @@ export function NewReportWizard() {
     void window.memex.reports.cancel().catch(() => undefined);
   };
 
-  const disabledReason = !period
+  const disabledReason = aiLoading
+    ? '正在读取 AI 服务配置'
+    : !period
     ? '请选择有效的时间范围'
     : !selectedTemplate
       ? '请选择模板'

@@ -34,6 +34,7 @@ describe('AI config store', () => {
       model: 'model-a',
       hasApiKey: true,
       timeoutMs: 90_000,
+      revision: expect.any(String),
     });
     expect(JSON.stringify(store.getPublic())).not.toContain('secret');
     expect(store.getCredentials()).toEqual({
@@ -65,6 +66,7 @@ describe('AI config store', () => {
       model: 'local',
       hasApiKey: false,
       timeoutMs: 90_000,
+      revision: expect.any(String),
     });
     expect(store.getCredentials().apiKey).toBeNull();
 
@@ -88,6 +90,22 @@ describe('AI config store', () => {
     });
   });
 
+  it('tests a replacement key without decrypting unusable stored ciphertext', () => {
+    const store = createAiConfigStore(db, {
+      ...adapter,
+      decryptString: () => {
+        throw new Error('decrypt failed');
+      },
+    });
+    store.save({ baseUrl: 'https://api.example.com/v1', model: 'model-a', apiKey: 'old' });
+
+    expect(store.resolveConnectionConfig({ apiKey: 'replacement', timeoutMs: 30_000 })).toEqual({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-a',
+      apiKey: 'replacement',
+      timeoutMs: 30_000,
+    });
+  });
   it('persists public settings across store instances and validates patches', () => {
     createAiConfigStore(db, adapter).save({
       baseUrl: 'https://api.example.com/v1',
@@ -100,6 +118,7 @@ describe('AI config store', () => {
       model: 'model-a',
       hasApiKey: false,
       timeoutMs: 120_000,
+      revision: expect.any(String),
     });
     expect(() => store.save({ apiKey: 'secret', clearApiKey: true })).toThrow();
   });

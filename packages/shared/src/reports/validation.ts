@@ -41,6 +41,7 @@ export const reportGenerateSchema = z
     templateId: z.string().uuid(),
     taskIds: z.array(z.string().uuid()).min(1).max(1_000),
     includeNotes: z.boolean(),
+    aiConfigRevision: z.string().min(1).max(200),
   })
   .refine((value) => value.periodEnd > value.periodStart, { message: '结束时间必须晚于开始时间' });
 

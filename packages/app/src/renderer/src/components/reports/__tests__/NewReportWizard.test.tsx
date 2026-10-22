@@ -118,6 +118,25 @@ describe('new report wizard', () => {
     expect(getConfig).toHaveBeenCalledTimes(2);
   });
 
+  it('locks the period while candidates are loading to prevent stale ranges', async () => {
+    let resolveCandidates!: (value: ReportCandidate[]) => void;
+    (window.memex.reports.candidates as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise<ReportCandidate[]>((resolve) => {
+        resolveCandidates = resolve;
+      }),
+    );
+    render(<NewReportWizard />);
+    await screen.findByText(/发送服务：api\.example\.com/);
+    fireEvent.click(screen.getByRole('button', { name: '加载任务' }));
+
+    expect((screen.getByLabelText('开始日期') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText('结束日期') as HTMLInputElement).disabled).toBe(true);
+    await act(async () => {
+      resolveCandidates([taskA]);
+      await Promise.resolve();
+    });
+    await waitFor(() => expect((screen.getByLabelText('开始日期') as HTMLInputElement).disabled).toBe(false));
+  });
   it('keeps a successfully committed report even if cancel was requested late', async () => {
     let resolveGenerate!: (value: Report) => void;
     (window.memex.reports.generate as ReturnType<typeof vi.fn>).mockReturnValue(

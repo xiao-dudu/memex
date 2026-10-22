@@ -51,6 +51,7 @@ export function AiServiceSettings() {
     const patch: AiServiceConfigPatch = {
       baseUrl: baseUrl.trim(),
       model: model.trim(),
+      timeoutMs: timeoutValue * 1000,
     };
     if (apiKey.length > 0) patch.apiKey = apiKey;
     return patch;

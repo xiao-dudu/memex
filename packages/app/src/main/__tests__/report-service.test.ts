@@ -28,9 +28,10 @@ let templateId: string;
 let request: ReturnType<typeof vi.fn>;
 
 const aiConfig: AiConfigStore = {
-  getPublic: () => ({ baseUrl: 'https://api.example.com/v1', model: 'model-a', hasApiKey: true, timeoutMs: 90_000 }),
-  save: () => ({ baseUrl: 'https://api.example.com/v1', model: 'model-a', hasApiKey: true, timeoutMs: 90_000 }),
+  getPublic: () => ({ baseUrl: 'https://api.example.com/v1', model: 'model-a', hasApiKey: true, timeoutMs: 90_000, revision: 'revision-1' }),
+  save: () => ({ baseUrl: 'https://api.example.com/v1', model: 'model-a', hasApiKey: true, timeoutMs: 90_000, revision: 'revision-1' }),
   getCredentials: () => ({ baseUrl: 'https://api.example.com/v1', model: 'model-a', apiKey: 'secret', timeoutMs: 90_000 }),
+  resolveConnectionConfig: () => ({ baseUrl: 'https://api.example.com/v1', model: 'model-a', apiKey: 'secret', timeoutMs: 90_000 }),
 };
 
 function createService(overrides: Partial<ReportServiceDependencies> = {}) {
@@ -48,6 +49,7 @@ function period() {
   return {
     periodStart: new Date(2026, 9, 19).getTime(),
     periodEnd: new Date(2026, 9, 26).getTime(),
+    aiConfigRevision: 'revision-1',
   };
 }
 
@@ -206,6 +208,24 @@ describe('report service generation', () => {
     expect(reports.list()).toEqual([]);
   });
 
+  it('rejects generation if the confirmed AI configuration changed', async () => {
+    const task = tasks.create({ title: '配置变化' });
+    const service = createService({
+      aiConfig: {
+        ...aiConfig,
+        getPublic: () => ({ ...aiConfig.getPublic(), revision: 'revision-2' }),
+      },
+    });
+
+    await expect(
+      service.generate(
+        { ...period(), templateId, taskIds: [task.id], includeNotes: false },
+        new AbortController().signal,
+      ),
+    ).rejects.toMatchObject({ message: 'AI 服务配置已变化，请重新确认' });
+    expect(request).not.toHaveBeenCalled();
+    expect(reports.list()).toEqual([]);
+  });
   it('does not save a report for empty output, cancellation or AI failure', async () => {
     const task = tasks.create({ title: '失败场景' });
     const input = { ...period(), templateId, taskIds: [task.id], includeNotes: false };

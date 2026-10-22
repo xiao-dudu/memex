@@ -49,14 +49,9 @@ function reportForExport(id: string) {
 
 function draftAiConfig(patch?: AiServiceConfigPatch) {
   const parsed = aiConfigPatchSchema.parse(patch ?? {});
-  const stored = getRepositories().aiConfig.getCredentials();
-  const baseUrl = parsed.baseUrl ?? stored.baseUrl;
-  const model = parsed.model ?? stored.model;
-  let apiKey = stored.apiKey;
-  if (parsed.clearApiKey) apiKey = null;
-  else if (parsed.apiKey !== undefined) apiKey = parsed.apiKey || null;
-  if (!baseUrl.trim() || !model.trim()) throw new Error('请先填写 Base URL 和模型名称');
-  return { baseUrl, model, apiKey, timeoutMs: parsed.timeoutMs ?? stored.timeoutMs };
+  const resolved = getRepositories().aiConfig.resolveConnectionConfig(parsed);
+  if (!resolved.baseUrl.trim() || !resolved.model.trim()) throw new Error('请先填写 Base URL 和模型名称');
+  return resolved;
 }
 
 export function registerIpcHandlers(): void {

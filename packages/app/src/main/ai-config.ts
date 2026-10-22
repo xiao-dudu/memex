@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { MemexDatabase } from '@memex/shared';
 import { aiConfigPatchSchema, type AiServiceConfig, type AiServiceConfigPatch } from '@memex/shared';
 
@@ -23,6 +24,12 @@ export interface AiConfigStore {
   getPublic(): AiServiceConfig;
   save(patch: AiServiceConfigPatch): AiServiceConfig;
   getCredentials(): { baseUrl: string; model: string; apiKey: string | null; timeoutMs: number };
+  resolveConnectionConfig(patch: AiServiceConfigPatch): {
+    baseUrl: string;
+    model: string;
+    apiKey: string | null;
+    timeoutMs: number;
+  };
 }
 
 export function createElectronSecretAdapter(api: ElectronSafeStorageApi): SecretAdapter {
@@ -68,14 +75,20 @@ export function createAiConfigStore(db: MemexDatabase, secretAdapter: SecretAdap
     return value.length > 0 ? value : null;
   };
 
+  const getPublicConfig = (): AiServiceConfig => {
+    const baseUrl = readStringSetting(db, BASE_URL_KEY);
+    const model = readStringSetting(db, MODEL_KEY);
+    const ciphertext = getCiphertext();
+    const timeoutMs = readNumberSetting(db, TIMEOUT_MS_KEY, DEFAULT_TIMEOUT_MS);
+    const revision = createHash('sha256')
+      .update(JSON.stringify({ baseUrl, model, ciphertext, timeoutMs }))
+      .digest('hex');
+    return { baseUrl, model, hasApiKey: ciphertext !== null, timeoutMs, revision };
+  };
+
   return {
     getPublic() {
-      return {
-        baseUrl: readStringSetting(db, BASE_URL_KEY),
-        model: readStringSetting(db, MODEL_KEY),
-        hasApiKey: getCiphertext() !== null,
-        timeoutMs: readNumberSetting(db, TIMEOUT_MS_KEY, DEFAULT_TIMEOUT_MS),
-      };
+      return getPublicConfig();
     },
 
     save(patch) {
@@ -102,6 +115,21 @@ export function createAiConfigStore(db: MemexDatabase, secretAdapter: SecretAdap
       });
       apply();
       return this.getPublic();
+    },
+
+    resolveConnectionConfig(patch) {
+      const value = aiConfigPatchSchema.parse(patch);
+      const current = getPublicConfig();
+      let apiKey: string | null;
+      if (value.apiKey !== undefined) apiKey = value.apiKey || null;
+      else if (value.clearApiKey) apiKey = null;
+      else apiKey = this.getCredentials().apiKey;
+      return {
+        baseUrl: value.baseUrl ?? current.baseUrl,
+        model: value.model ?? current.model,
+        apiKey,
+        timeoutMs: value.timeoutMs ?? current.timeoutMs,
+      };
     },
 
     getCredentials() {

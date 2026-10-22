@@ -3,12 +3,13 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { AiServiceConfig, MemexApi } from '@memex/shared';
 import { AiServiceSettings } from '../AiServiceSettings';
 
-const emptyConfig: AiServiceConfig = { baseUrl: '', model: '', hasApiKey: false, timeoutMs: 90_000 };
+const emptyConfig: AiServiceConfig = { baseUrl: '', model: '', hasApiKey: false, timeoutMs: 90_000, revision: 'revision-1' };
 const savedConfig: AiServiceConfig = {
   baseUrl: 'https://api.example.com/v1',
   model: 'm1',
   hasApiKey: true,
   timeoutMs: 90_000,
+  revision: 'revision-1',
 };
 
 beforeEach(() => {
@@ -49,11 +50,12 @@ describe('AI service settings', () => {
     window.memex.ai.getConfig = vi.fn().mockResolvedValue(savedConfig);
     render(<AiServiceSettings />);
     fireEvent.change(await screen.findByLabelText('模型'), { target: { value: 'draft-model' } });
+    fireEvent.change(screen.getByLabelText('超时时间（秒）'), { target: { value: '45' } });
     fireEvent.click(screen.getByRole('button', { name: '测试连接' }));
 
     await waitFor(() =>
       expect(window.memex.ai.testConnection).toHaveBeenCalledWith(
-        expect.objectContaining({ model: 'draft-model' }),
+        expect.objectContaining({ model: 'draft-model', timeoutMs: 45_000 }),
       ),
     );
     expect(await screen.findByText(/连接成功，耗时 42 ms/)).not.toBeNull();

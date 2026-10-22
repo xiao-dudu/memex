@@ -138,6 +138,10 @@ export function createReportService(deps: ReportServiceDependencies): ReportServ
       if (signal.aborted) throw new AiRequestError('CANCELLED', '已取消生成');
       const credentials = deps.aiConfig.getCredentials();
       if (!credentials.baseUrl.trim() || !credentials.model.trim()) throw new Error('请先配置 AI 服务');
+      const currentConfig = deps.aiConfig.getPublic();
+      if (currentConfig.revision !== parsed.aiConfigRevision) {
+        throw new Error('AI 服务配置已变化，请重新确认');
+      }
 
       const startedAt = deps.now();
       const completion = await deps.request(

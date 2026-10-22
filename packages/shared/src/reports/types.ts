@@ -100,6 +100,7 @@ export interface ReportGenerateInput {
   templateId: string;
   taskIds: string[];
   includeNotes: boolean;
+  aiConfigRevision: string;
 }
 
 export interface ReportUpdateInput {
@@ -112,6 +113,7 @@ export interface AiServiceConfig {
   model: string;
   hasApiKey: boolean;
   timeoutMs: number;
+  revision: string;
 }
 
 export interface AiServiceConfigPatch {
