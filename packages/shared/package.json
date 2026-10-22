@@ -1,6 +1,6 @@
 {
   "name": "@memex/shared",
-  "version": "1.1.14",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",

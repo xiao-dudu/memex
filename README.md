@@ -1,6 +1,6 @@
 # Memex
 
-本地优先的任务清单与富文本笔记桌面应用。内置只读 MCP server，让 AI 客户端可以读取你的任务；笔记访问需在应用设置中显式开启。
+本地优先的任务清单、富文本笔记与 AI 周报桌面应用。内置只读 MCP server，让 AI 客户端可以读取你的任务；笔记访问需在应用设置中显式开启，周报生成也只会发送你明确勾选的内容。
 
 ## 技术栈
 
@@ -29,7 +29,7 @@ pnpm build
 pnpm --filter @memex/app dist
 ```
 
-Windows 安装包输出到 `release/Memex-Setup-1.1.14.exe`。
+Windows 安装包输出到 `release/Memex-Setup-1.2.0.exe`。
 
 ## 自动更新
 
@@ -172,6 +172,7 @@ git remote set-url github ssh://git@ssh.github.com:443/xiao-dudu/memex.git
 
 - 任务：三态、优先级、截止时间、标签、智能视图、回收站
 - 笔记：TipTap 富文本、自动保存、标签、置顶、回收站
+- 周报：结构化模板、任务筛选、关联笔记、历史快照、Markdown/PDF 导出
 - 统一搜索：`Ctrl+K`，中文全文搜索
 - 快速捕获：`Ctrl+Shift+Space`，默认任务，`Ctrl+2` 切笔记
 - 本地数据：自动保存、每日备份（保留 7 份）、JSON 导出
@@ -209,7 +210,7 @@ git remote set-url github ssh://git@ssh.github.com:443/xiao-dudu/memex.git
 | 快捷键 | 行为 |
 | --- | --- |
 | `Ctrl+K` | 统一搜索 |
-| `Ctrl+N` | 新建任务 / 笔记 |
+| `Ctrl+N` | 新建任务 / 笔记 / 周报 |
 | `Ctrl+Shift+N` | 新建笔记 |
 | `Ctrl+Shift+Space` | 打开快速捕获 |
 | `Ctrl+2` | 快速捕获中切换任务 / 笔记 |
@@ -217,7 +218,11 @@ git remote set-url github ssh://git@ssh.github.com:443/xiao-dudu/memex.git
 
 ## 数据与隐私
 
-数据只保存在本机 SQLite，应用本身不发起网络请求。开启笔记访问后，笔记全文会进入 AI 客户端上下文，等同于发送给对应模型服务商。
+数据默认只保存在本机 SQLite。应用只在检查/下载更新，或用户主动生成周报时访问网络。
+
+- MCP 开启笔记访问后，笔记全文会进入 AI 客户端上下文，等同于发送给对应模型服务商。
+- 周报生成只会发送用户勾选的任务，以及明确开启的关联笔记；发送前会显示服务地址和数量。
+- API Key 由 Electron `safeStorage` 加密保存，只在主进程解密使用，不会进入渲染进程、日志或 JSON 导出。
 
 ## 仓库结构
 
