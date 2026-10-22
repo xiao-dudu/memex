@@ -23,6 +23,10 @@ function parseLocalDate(value: string): Date {
   return date;
 }
 
+export function formatLocalDateInput(timestamp: number): string {
+  return formatDateInput(new Date(timestamp));
+}
+
 export function defaultReportPeriod(now: Date): { start: string; end: string } {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const start = new Date(today);
@@ -43,3 +47,4 @@ export function localDayEndExclusive(value: string): number {
 export function displayEndDate(periodEnd: number): string {
   return formatDateInput(new Date(periodEnd - 1));
 }
+

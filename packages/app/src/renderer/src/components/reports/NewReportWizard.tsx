@@ -11,7 +11,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import type { AiServiceConfig, ReportCandidate } from '@memex/shared';
-import { displayEndDate, localDayEndExclusive, localDayStart, defaultReportPeriod } from '../../lib/report-period';
+import { displayEndDate, formatLocalDateInput, localDayEndExclusive, localDayStart, defaultReportPeriod } from '../../lib/report-period';
 import { useAppStore } from '../../store/useAppStore';
 import { useReportStore } from '../../store/useReportStore';
 import { Button } from '../ui/button';
@@ -38,15 +38,21 @@ function serviceHost(baseUrl: string): string {
 }
 
 export function NewReportWizard() {
-  const initialPeriod = useMemo(() => defaultReportPeriod(new Date()), []);
+  const prefill = useMemo(() => useReportStore.getState().wizardPrefill, []);
+  const initialPeriod = useMemo(() => {
+    if (prefill) {
+      return { start: formatLocalDateInput(prefill.periodStart), end: displayEndDate(prefill.periodEnd) };
+    }
+    return defaultReportPeriod(new Date());
+  }, [prefill]);
   const templates = useReportStore((state) => state.templates);
   const setActiveReport = useReportStore((state) => state.setActiveReport);
   const setSettingsOpen = useAppStore((state) => state.setSettingsOpen);
 
   const [periodStart, setPeriodStart] = useState(initialPeriod.start);
   const [periodEnd, setPeriodEnd] = useState(initialPeriod.end);
-  const [templateId, setTemplateId] = useState(() => useReportStore.getState().templates[0]?.id ?? '');
-  const [includeNotes, setIncludeNotes] = useState(false);
+  const [templateId, setTemplateId] = useState(() => prefill?.templateId ?? useReportStore.getState().templates[0]?.id ?? '');
+  const [includeNotes, setIncludeNotes] = useState(prefill?.includeNotes ?? false);
   const [aiConfig, setAiConfig] = useState<AiServiceConfig | null>(null);
   const [aiLoading, setAiLoading] = useState(true);
   const [candidates, setCandidates] = useState<ReportCandidate[]>([]);
@@ -58,6 +64,7 @@ export function NewReportWizard() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const cancelledByUser = useRef(false);
+  const prefillApplied = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -68,7 +75,15 @@ export function NewReportWizard() {
           availableTemplates = await window.memex.templates.list();
           if (active) useReportStore.setState({ templates: availableTemplates });
         }
-        if (active) setTemplateId((current) => current || availableTemplates[0]?.id || '');
+        if (active) {
+          setTemplateId((current) => {
+            if (availableTemplates.some((template) => template.id === current)) return current;
+            if (prefill?.templateId && availableTemplates.some((template) => template.id === prefill.templateId)) {
+              return prefill.templateId;
+            }
+            return availableTemplates[0]?.id || '';
+          });
+        }
 
         const config = await window.memex.ai.getConfig();
         if (active) setAiConfig(config);
@@ -129,7 +144,13 @@ export function NewReportWizard() {
         periodEnd: period.end,
       });
       setCandidates(result);
-      setSelectedIds(new Set(result.map((task) => task.id)));
+      let initiallySelected = result;
+      if (!prefillApplied.current && prefill?.taskIds.length) {
+        const prefilledTasks = result.filter((task) => prefill.taskIds.includes(task.id));
+        if (prefilledTasks.length > 0) initiallySelected = prefilledTasks;
+        prefillApplied.current = true;
+      }
+      setSelectedIds(new Set(initiallySelected.map((task) => task.id)));
       setLoaded(true);
     } catch (loadError) {
       setError(errorMessage(loadError));
@@ -454,4 +475,7 @@ export function NewReportWizard() {
     </div>
   );
 }
+
+
+
 

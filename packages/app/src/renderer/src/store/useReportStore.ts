@@ -5,6 +5,14 @@ import { useAppStore } from './useAppStore';
 export type ReportMode = 'empty' | 'new' | 'report' | 'template';
 export type ReportTab = 'reports' | 'templates';
 
+export interface ReportWizardPrefill {
+  periodStart: number;
+  periodEnd: number;
+  templateId: string | null;
+  taskIds: string[];
+  includeNotes: boolean;
+}
+
 interface ReportState {
   tab: ReportTab;
   reports: ReportSummary[];
@@ -14,11 +22,14 @@ interface ReportState {
   mode: ReportMode;
   loading: boolean;
   error: string | null;
+  wizardPrefill: ReportWizardPrefill | null;
   load: () => Promise<void>;
   setTab: (tab: ReportTab) => void;
   selectReport: (id: string) => Promise<void>;
   setActiveReport: (report: Report) => void;
+  applyReport: (report: Report) => void;
   startNewReport: () => void;
+  regenerateReport: (report: Report) => void;
   selectTemplate: (id: string) => void;
   startNewTemplate: () => void;
   removeReport: (id: string) => Promise<void>;
@@ -26,6 +37,21 @@ interface ReportState {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function summarizeReport(report: Report): ReportSummary {
+  return {
+    id: report.id,
+    title: report.title,
+    periodStart: report.periodStart,
+    periodEnd: report.periodEnd,
+    templateId: report.templateId,
+    templateName: report.template.name,
+    taskCount: report.tasks.length,
+    noteCount: report.notes.length,
+    createdAt: report.createdAt,
+    updatedAt: report.updatedAt,
+  };
 }
 
 export const useReportStore = create<ReportState>((set, get) => ({
@@ -37,6 +63,7 @@ export const useReportStore = create<ReportState>((set, get) => ({
   mode: 'empty',
   loading: true,
   error: null,
+  wizardPrefill: null,
 
   async load() {
     set({ loading: true, error: null });
@@ -74,6 +101,7 @@ export const useReportStore = create<ReportState>((set, get) => ({
         mode: 'report',
         tab: 'reports',
         error: null,
+        wizardPrefill: null,
       });
       useAppStore.getState().setListCollapsed(false);
     } catch (error) {
@@ -82,22 +110,69 @@ export const useReportStore = create<ReportState>((set, get) => ({
   },
 
   setActiveReport(report) {
-    set({ activeReport: report, activeTemplateId: null, mode: 'report', tab: 'reports', error: null });
+    get().applyReport(report);
     void get().load();
   },
 
+  applyReport(report) {
+    const summary = summarizeReport(report);
+    const exists = get().reports.some((item) => item.id === report.id);
+    set({
+      activeReport: report,
+      reports: exists
+        ? get().reports.map((item) => (item.id === report.id ? summary : item))
+        : [summary, ...get().reports],
+      activeTemplateId: null,
+      mode: 'report',
+      tab: 'reports',
+      error: null,
+    });
+  },
+
   startNewReport() {
-    set({ tab: 'reports', mode: 'new', activeReport: null, error: null });
+    set({ tab: 'reports', mode: 'new', activeReport: null, error: null, wizardPrefill: null });
+    useAppStore.getState().setListCollapsed(false);
+  },
+
+  regenerateReport(report) {
+    set({
+      tab: 'reports',
+      mode: 'new',
+      activeReport: null,
+      activeTemplateId: null,
+      error: null,
+      wizardPrefill: {
+        periodStart: report.periodStart,
+        periodEnd: report.periodEnd,
+        templateId: report.templateId,
+        taskIds: report.tasks.map((task) => task.id),
+        includeNotes: report.notes.length > 0,
+      },
+    });
     useAppStore.getState().setListCollapsed(false);
   },
 
   selectTemplate(id) {
-    set({ tab: 'templates', mode: 'template', activeTemplateId: id, activeReport: null, error: null });
+    set({
+      tab: 'templates',
+      mode: 'template',
+      activeTemplateId: id,
+      activeReport: null,
+      error: null,
+      wizardPrefill: null,
+    });
     useAppStore.getState().setListCollapsed(false);
   },
 
   startNewTemplate() {
-    set({ tab: 'templates', mode: 'template', activeTemplateId: null, activeReport: null, error: null });
+    set({
+      tab: 'templates',
+      mode: 'template',
+      activeTemplateId: null,
+      activeReport: null,
+      error: null,
+      wizardPrefill: null,
+    });
     useAppStore.getState().setListCollapsed(false);
   },
 
@@ -116,4 +191,3 @@ export const useReportStore = create<ReportState>((set, get) => ({
     }
   },
 }));
-

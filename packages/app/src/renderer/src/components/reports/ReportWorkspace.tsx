@@ -1,7 +1,8 @@
 import { BookTemplate, FileText } from 'lucide-react';
-import { motion } from 'motion/react';
+
 import { useReportStore } from '../../store/useReportStore';
 import { NewReportWizard } from './NewReportWizard';
+import { ReportDetail } from './ReportDetail';
 
 function EmptyWorkspace() {
   return (
@@ -14,33 +15,6 @@ function EmptyWorkspace() {
         周报会保存完整快照，后续修改任务、笔记或模板不会改变历史内容。
       </p>
     </div>
-  );
-}
-
-function ReportDetailPreview() {
-  const report = useReportStore((state) => state.activeReport);
-  if (!report) return <EmptyWorkspace />;
-
-  return (
-    <motion.section
-      key={report.id}
-      initial={{ opacity: 0, y: 5 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.18 }}
-      className="thin-scroll flex min-w-0 flex-1 flex-col overflow-y-auto bg-[var(--bg)]"
-    >
-      <div className="mx-auto w-full max-w-[860px] px-10 py-9">
-        <div className="mb-6">
-          <h1 className="text-2xl font-semibold tracking-tight">{report.title}</h1>
-          <p className="mt-2 text-xs text-[var(--faint)]">
-            {report.template.name} · {report.tasks.length} 项任务 · {report.notes.length} 篇笔记
-          </p>
-        </div>
-        <article className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-7 shadow-soft">
-          <pre className="whitespace-pre-wrap font-sans text-sm leading-7 text-[var(--ink)]">{report.contentMarkdown}</pre>
-        </article>
-      </div>
-    </motion.section>
   );
 }
 
@@ -115,9 +89,9 @@ function TemplateWorkspace() {
 
 export function ReportWorkspace() {
   const mode = useReportStore((state) => state.mode);
+  const activeReport = useReportStore((state) => state.activeReport);
   if (mode === 'new') return <NewReportWizard />;
-  if (mode === 'report') return <ReportDetailPreview />;
+  if (mode === 'report') return activeReport ? <ReportDetail report={activeReport} /> : <EmptyWorkspace />;
   if (mode === 'template') return <TemplateWorkspace />;
   return <EmptyWorkspace />;
 }
-
