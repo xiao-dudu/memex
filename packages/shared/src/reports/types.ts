@@ -111,6 +111,7 @@ export interface AiServiceConfig {
   baseUrl: string;
   model: string;
   hasApiKey: boolean;
+  timeoutMs: number;
 }
 
 export interface AiServiceConfigPatch {
@@ -118,4 +119,5 @@ export interface AiServiceConfigPatch {
   model?: string;
   apiKey?: string;
   clearApiKey?: boolean;
+  timeoutMs?: number;
 }

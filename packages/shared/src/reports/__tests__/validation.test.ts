@@ -27,6 +27,12 @@ describe('report validation', () => {
     ).toThrow();
   });
 
+  it('bounds configurable AI request timeouts', () => {
+    expect(aiConfigPatchSchema.safeParse({ timeoutMs: 5_000 }).success).toBe(true);
+    expect(aiConfigPatchSchema.safeParse({ timeoutMs: 300_000 }).success).toBe(true);
+    expect(aiConfigPatchSchema.safeParse({ timeoutMs: 4_999 }).success).toBe(false);
+    expect(aiConfigPatchSchema.safeParse({ timeoutMs: 300_001 }).success).toBe(false);
+  });
   it('rejects simultaneous API Key set and clear', () => {
     expect(() => aiConfigPatchSchema.parse({ apiKey: 'secret', clearApiKey: true })).toThrow();
   });

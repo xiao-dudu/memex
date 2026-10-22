@@ -3,6 +3,7 @@ export type AiErrorCode =
   | 'AUTH'
   | 'NOT_FOUND'
   | 'RATE_LIMIT'
+  | 'CONTEXT_LENGTH'
   | 'SERVER'
   | 'TIMEOUT'
   | 'CANCELLED'
@@ -83,7 +84,35 @@ export function normalizeChatCompletionsUrl(baseUrl: string): string {
   return url.toString().replace(/\/$/, '');
 }
 
-function httpError(status: number): AiRequestError {
+async function readErrorSnippet(response: Response): Promise<string> {
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (size < 8192) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      const remaining = 8192 - size;
+      const chunk = value.byteLength > remaining ? value.subarray(0, remaining) : value;
+      chunks.push(chunk);
+      size += chunk.byteLength;
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))));
+}
+
+function isContextLengthText(value: string): boolean {
+  return /context_length_exceeded|maximum context length|context window|too many tokens|prompt is too long|maximum.{0,20}tokens/i.test(value);
+}
+
+function httpError(status: number, body = ''): AiRequestError {
+  if (status === 413 || isContextLengthText(body)) {
+    return new AiRequestError('CONTEXT_LENGTH', '发送内容超过模型上下文长度，请减少任务或笔记');
+  }
   if (status === 401 || status === 403) return new AiRequestError('AUTH', '鉴权失败，请检查 API Key');
   if (status === 404) return new AiRequestError('NOT_FOUND', '接口路径不存在，请检查 Base URL');
   if (status === 429) return new AiRequestError('RATE_LIMIT', '请求过于频繁或额度不足');
@@ -175,7 +204,10 @@ export async function requestChatCompletion(
       }),
       abortPromise,
     ]);
-    if (!response.ok) throw httpError(response.status);
+    if (!response.ok) {
+      const snippet = await readErrorSnippet(response).catch(() => '');
+      throw httpError(response.status, snippet);
+    }
 
     let payload: ChatCompletionPayload;
     try {

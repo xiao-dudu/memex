@@ -57,5 +57,6 @@ export const aiConfigPatchSchema = z
     model: z.string().trim().max(200).optional(),
     apiKey: z.string().max(10_000).optional(),
     clearApiKey: z.boolean().optional(),
+    timeoutMs: z.number().int().min(5_000).max(300_000).optional(),
   })
   .refine((value) => !(value.apiKey && value.clearApiKey), { message: '不能同时设置和清除 API Key' });

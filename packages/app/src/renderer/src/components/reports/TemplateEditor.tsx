@@ -114,7 +114,7 @@ export function TemplateEditor({ template }: TemplateEditorProps) {
     }
   };
 
-  const copyBuiltin = async () => {
+  const copyTemplate = async () => {
     setError(null);
     setSaving(true);
     try {
@@ -160,13 +160,20 @@ export function TemplateEditor({ template }: TemplateEditorProps) {
             <Eye size={13} /> {showPreview ? '收起提示词预览' : '预览最终提示词'}
           </Button>
           {isBuiltin ? (
-            <Button variant="accent" size="sm" disabled={saving} onClick={() => void copyBuiltin()}>
+            <Button variant="accent" size="sm" disabled={saving} onClick={() => void copyTemplate()}>
               复制并编辑
             </Button>
           ) : (
-            <Button variant="accent" size="sm" disabled={saving} onClick={() => void save()}>
-              <Save size={13} /> 保存模板
-            </Button>
+            <>
+              {template ? (
+                <Button variant="outline" size="sm" disabled={saving} onClick={() => void copyTemplate()}>
+                  复制模板
+                </Button>
+              ) : null}
+              <Button variant="accent" size="sm" disabled={saving} onClick={() => void save()}>
+                <Save size={13} /> 保存模板
+              </Button>
+            </>
           )}
         </header>
 
@@ -223,7 +230,7 @@ export function TemplateEditor({ template }: TemplateEditorProps) {
                     placeholder="说明这一章节需要写什么"
                   />
                   <label className="mt-2 flex w-fit items-center gap-2 text-[10.5px] text-[var(--muted)]">
-                    <Checkbox checked={section.allowEmpty} onChange={(checked) => updateSection(section.id, { allowEmpty: checked })} label={`允许章节 ${index + 1} 为空`} />
+                    <Checkbox disabled={isBuiltin} checked={section.allowEmpty} onChange={(checked) => updateSection(section.id, { allowEmpty: checked })} label={`允许章节 ${index + 1} 为空`} />
                     允许为空
                   </label>
                 </div>
@@ -264,8 +271,3 @@ export function TemplateEditor({ template }: TemplateEditorProps) {
     </div>
   );
 }
-
-
-
-
-

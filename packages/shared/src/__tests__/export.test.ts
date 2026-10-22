@@ -8,6 +8,7 @@ import { exportAll, purgeExpiredTrash } from '../export.js';
 import { createTaskRepository } from '../repositories/tasks.js';
 import { createNoteRepository } from '../repositories/notes.js';
 import { createReportTemplateRepository } from '../repositories/report-templates.js';
+import { createReportRepository } from '../repositories/reports.js';
 import type { MemexDatabase } from '../db/database.js';
 
 let db: MemexDatabase;
@@ -31,6 +32,35 @@ describe('export', () => {
     expect(bundle.reports).toHaveLength(0);
   });
 
+  it('exports persisted report rows', () => {
+    createReportRepository(db).create({
+      title: '导出周报',
+      periodStart: 1,
+      periodEnd: 2,
+      templateId: null,
+      template: {
+        name: '模板',
+        description: null,
+        basePrompt: '总结',
+        sections: [{ id: 'a', title: 'A', instruction: '', allowEmpty: true }],
+        constraints: '',
+      },
+      tasks: [],
+      notes: [],
+      contentMarkdown: '# 周报',
+      generationMeta: {
+        model: 'model-a',
+        baseUrl: 'https://api.example.com/v1',
+        generatedAt: 1,
+        durationMs: 1,
+        promptChars: 1,
+      },
+    });
+
+    const bundle = exportAll(db, new Date('2026-10-22T00:00:00Z'));
+    expect(bundle.reports).toHaveLength(1);
+    expect(bundle.reports[0]).toEqual(expect.objectContaining({ title: '导出周报' }));
+  });
   it('exports report templates without settings or credentials', () => {
     createReportTemplateRepository(db).create({
       name: '周报模板',

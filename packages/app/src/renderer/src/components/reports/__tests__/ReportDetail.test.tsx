@@ -65,6 +65,14 @@ describe('report detail', () => {
     expect(window.memex.reports.update).toHaveBeenCalledWith(report.id, { contentMarkdown: '# 新内容' });
   });
 
+  it('flushes pending edits when the detail unmounts', () => {
+    const view = render(<ReportDetail report={report} />);
+    fireEvent.change(screen.getByLabelText('Markdown 内容'), { target: { value: '# 离开前保存' } });
+    view.unmount();
+    expect(window.memex.reports.update).toHaveBeenCalledWith(report.id, {
+      contentMarkdown: '# 离开前保存',
+    });
+  });
   it('does not render raw script tags', () => {
     const { container } = render(<MarkdownPreview value={'<script>alert(1)</script>'} />);
     expect(container.querySelector('script')).toBeNull();
@@ -92,4 +100,3 @@ describe('report detail', () => {
     expect(screen.getByRole('heading', { name: '即时预览' })).not.toBeNull();
   });
 });
-

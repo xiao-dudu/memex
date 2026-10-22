@@ -28,9 +28,9 @@ let templateId: string;
 let request: ReturnType<typeof vi.fn>;
 
 const aiConfig: AiConfigStore = {
-  getPublic: () => ({ baseUrl: 'https://api.example.com/v1', model: 'model-a', hasApiKey: true }),
-  save: () => ({ baseUrl: 'https://api.example.com/v1', model: 'model-a', hasApiKey: true }),
-  getCredentials: () => ({ baseUrl: 'https://api.example.com/v1', model: 'model-a', apiKey: 'secret' }),
+  getPublic: () => ({ baseUrl: 'https://api.example.com/v1', model: 'model-a', hasApiKey: true, timeoutMs: 90_000 }),
+  save: () => ({ baseUrl: 'https://api.example.com/v1', model: 'model-a', hasApiKey: true, timeoutMs: 90_000 }),
+  getCredentials: () => ({ baseUrl: 'https://api.example.com/v1', model: 'model-a', apiKey: 'secret', timeoutMs: 90_000 }),
 };
 
 function createService(overrides: Partial<ReportServiceDependencies> = {}) {
@@ -135,6 +135,25 @@ describe('report service generation', () => {
     expect(reports.list()).toEqual([]);
   });
 
+  it('rejects selected tasks outside the requested period', async () => {
+    const task = tasks.create({ title: '范围外任务' });
+    const old = new Date(2026, 8, 1).getTime();
+    db.prepare('UPDATE tasks SET created_at = ?, updated_at = ?, due_at = NULL, completed_at = NULL WHERE id = ?').run(
+      old,
+      old,
+      task.id,
+    );
+    const service = createService();
+
+    await expect(
+      service.generate(
+        { ...period(), templateId, taskIds: [task.id], includeNotes: false },
+        new AbortController().signal,
+      ),
+    ).rejects.toMatchObject({ message: '任务数据已变化，请重新加载' });
+    expect(request).not.toHaveBeenCalled();
+    expect(reports.list()).toEqual([]);
+  });
   it('includes linked notes only when the option is enabled', async () => {
     const note = notes.create({ title: '关联笔记', contentJson: '{}', plainText: '关联笔记内容' });
     const task = tasks.create({ title: '带笔记任务', noteId: note.id });
@@ -221,8 +240,3 @@ describe('report service generation', () => {
     );
   });
 });
-
-
-
-
-

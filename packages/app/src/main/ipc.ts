@@ -56,7 +56,7 @@ function draftAiConfig(patch?: AiServiceConfigPatch) {
   if (parsed.clearApiKey) apiKey = null;
   else if (parsed.apiKey !== undefined) apiKey = parsed.apiKey || null;
   if (!baseUrl.trim() || !model.trim()) throw new Error('请先填写 Base URL 和模型名称');
-  return { baseUrl, model, apiKey, timeoutMs: 15_000 };
+  return { baseUrl, model, apiKey, timeoutMs: parsed.timeoutMs ?? stored.timeoutMs };
 }
 
 export function registerIpcHandlers(): void {

@@ -128,6 +128,19 @@ describe('requestChatCompletion', () => {
     ).rejects.toMatchObject({ code });
   });
 
+  it('maps provider context-length errors to a dedicated code', async () => {
+    await expect(
+      requestChatCompletion(
+        { baseUrl: 'https://api.example.com/v1', model: 'm1', timeoutMs: 900 },
+        [{ role: 'user', content: 'x' }],
+        async () =>
+          new Response(JSON.stringify({ error: { code: 'context_length_exceeded', message: 'too long' } }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+      ),
+    ).rejects.toMatchObject({ code: 'CONTEXT_LENGTH' });
+  });
   it('rejects empty, malformed and unsuccessful response bodies', async () => {
     const config = { baseUrl: 'https://api.example.com/v1', model: 'm1', timeoutMs: 900 };
     const messages = [{ role: 'user' as const, content: 'x' }];

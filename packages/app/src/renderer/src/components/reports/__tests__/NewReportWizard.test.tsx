@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { MemexApi, Report, ReportCandidate, ReportTemplate } from '@memex/shared';
 import { NewReportWizard } from '../NewReportWizard';
 import { useReportStore } from '../../../store/useReportStore';
+import { useAppStore } from '../../../store/useAppStore';
 
 const template: ReportTemplate = {
   id: '00000000-0000-4000-8000-000000000001',
@@ -67,6 +68,7 @@ const savedReport: Report = {
 };
 
 beforeEach(() => {
+  useAppStore.setState({ settingsOpen: false });
   useReportStore.setState({
     tab: 'reports',
     reports: [],
@@ -94,6 +96,46 @@ afterEach(() => {
 });
 
 describe('new report wizard', () => {
+  it('refreshes AI configuration after settings closes', async () => {
+    const getConfig = vi
+      .fn()
+      .mockResolvedValueOnce({ baseUrl: '', model: '', hasApiKey: false })
+      .mockResolvedValueOnce({ baseUrl: 'https://new.example.com/v1', model: 'new-model', hasApiKey: false });
+    window.memex.ai.getConfig = getConfig;
+    render(<NewReportWizard />);
+    await waitFor(() => expect(screen.getByText(/尚未配置可用的 Base URL/)).not.toBeNull());
+
+    await act(async () => {
+      useAppStore.setState({ settingsOpen: true });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      useAppStore.setState({ settingsOpen: false });
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByText(/new\.example\.com · new-model/)).not.toBeNull();
+    expect(getConfig).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a successfully committed report even if cancel was requested late', async () => {
+    let resolveGenerate!: (value: Report) => void;
+    (window.memex.reports.generate as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise<Report>((resolve) => {
+        resolveGenerate = resolve;
+      }),
+    );
+    render(<NewReportWizard />);
+    fireEvent.click(await screen.findByRole('button', { name: '加载任务' }));
+    await screen.findByText('任务 A');
+    fireEvent.click(screen.getByRole('button', { name: '生成周报' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认发送' }));
+    await screen.findByText(/正在生成周报/);
+    fireEvent.click(screen.getByRole('button', { name: '取消生成' }));
+    resolveGenerate(savedReport);
+
+    await waitFor(() => expect(useReportStore.getState().activeReport?.id).toBe(savedReport.id));
+  });
   it('selects all candidates and excludes an unchecked task from generation', async () => {
     render(<NewReportWizard />);
 

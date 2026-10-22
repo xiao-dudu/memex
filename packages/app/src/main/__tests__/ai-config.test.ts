@@ -26,18 +26,21 @@ describe('AI config store', () => {
       baseUrl: 'https://api.example.com/v1',
       model: 'model-a',
       apiKey: 'secret',
+      timeoutMs: 90_000,
     });
 
     expect(saved).toEqual({
       baseUrl: 'https://api.example.com/v1',
       model: 'model-a',
       hasApiKey: true,
+      timeoutMs: 90_000,
     });
     expect(JSON.stringify(store.getPublic())).not.toContain('secret');
     expect(store.getCredentials()).toEqual({
       baseUrl: 'https://api.example.com/v1',
       model: 'model-a',
       apiKey: 'secret',
+      timeoutMs: 90_000,
     });
 
     const encrypted = db.prepare("SELECT value FROM settings WHERE key = 'ai_api_key_encrypted'").get() as {
@@ -61,6 +64,7 @@ describe('AI config store', () => {
       baseUrl: 'http://localhost:1234/v1',
       model: 'local',
       hasApiKey: false,
+      timeoutMs: 90_000,
     });
     expect(store.getCredentials().apiKey).toBeNull();
 
@@ -69,7 +73,7 @@ describe('AI config store', () => {
     expect(store.getPublic().hasApiKey).toBe(false);
   });
 
-  it('returns no key for malformed ciphertext without deleting it', () => {
+  it('throws for undecryptable ciphertext without deleting it', () => {
     const store = createAiConfigStore(db, {
       ...adapter,
       decryptString: () => {
@@ -77,7 +81,7 @@ describe('AI config store', () => {
       },
     });
     store.save({ apiKey: 'secret' });
-    expect(store.getCredentials().apiKey).toBeNull();
+    expect(() => store.getCredentials()).toThrow('API Key 无法解密');
     expect(store.getPublic().hasApiKey).toBe(true);
     expect(db.prepare("SELECT count(*) AS count FROM settings WHERE key = 'ai_api_key_encrypted'").get()).toEqual({
       count: 1,
@@ -85,14 +89,18 @@ describe('AI config store', () => {
   });
 
   it('persists public settings across store instances and validates patches', () => {
-    createAiConfigStore(db, adapter).save({ baseUrl: 'https://api.example.com/v1', model: 'model-a' });
+    createAiConfigStore(db, adapter).save({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-a',
+      timeoutMs: 120_000,
+    });
     const store = createAiConfigStore(db, adapter);
     expect(store.getPublic()).toEqual({
       baseUrl: 'https://api.example.com/v1',
       model: 'model-a',
       hasApiKey: false,
+      timeoutMs: 120_000,
     });
     expect(() => store.save({ apiKey: 'secret', clearApiKey: true })).toThrow();
   });
 });
-

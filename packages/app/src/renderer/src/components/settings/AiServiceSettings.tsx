@@ -12,6 +12,7 @@ export function AiServiceSettings() {
   const [config, setConfig] = useState<AiServiceConfig | null>(null);
   const [baseUrl, setBaseUrl] = useState('');
   const [model, setModel] = useState('');
+  const [timeoutSeconds, setTimeoutSeconds] = useState('90');
   const [apiKey, setApiKey] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -29,6 +30,7 @@ export function AiServiceSettings() {
         setConfig(value);
         setBaseUrl(value.baseUrl);
         setModel(value.model);
+        setTimeoutSeconds(String(Math.round(value.timeoutMs / 1000)));
       })
       .catch((loadError) => {
         if (active) setError(errorMessage(loadError));
@@ -41,7 +43,11 @@ export function AiServiceSettings() {
     };
   }, []);
 
+  const timeoutValue = Number(timeoutSeconds);
+  const timeoutValid = Number.isInteger(timeoutValue) && timeoutValue >= 5 && timeoutValue <= 300;
+
   const draftPatch = (): AiServiceConfigPatch => {
+    if (!timeoutValid) throw new Error('超时时间应为 5 到 300 秒之间的整数');
     const patch: AiServiceConfigPatch = {
       baseUrl: baseUrl.trim(),
       model: model.trim(),
@@ -55,6 +61,7 @@ export function AiServiceSettings() {
     const patch: AiServiceConfigPatch = {};
     if (baseUrl.trim() !== config.baseUrl) patch.baseUrl = baseUrl.trim();
     if (model.trim() !== config.model) patch.model = model.trim();
+    if (timeoutValue * 1000 !== config.timeoutMs) patch.timeoutMs = timeoutValue * 1000;
     if (apiKey.length > 0) patch.apiKey = apiKey;
     if (Object.keys(patch).length === 0) {
       setMessage('没有需要保存的修改');
@@ -142,6 +149,18 @@ export function AiServiceSettings() {
           />
         </label>
         <label className="space-y-1.5">
+          <span className="text-[10.5px] text-[var(--muted)]">超时（秒）</span>
+          <Input
+            aria-label="超时时间（秒）"
+            type="number"
+            min={5}
+            max={300}
+            step={1}
+            value={timeoutSeconds}
+            onChange={(event) => { setTimeoutSeconds(event.target.value); setMessage(null); }}
+          />
+        </label>
+        <label className="space-y-1.5">
           <span className="flex items-center gap-1.5 text-[10.5px] text-[var(--muted)]">
             <KeyRound size={11} /> API Key
           </span>
@@ -157,11 +176,11 @@ export function AiServiceSettings() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button variant="accent" size="sm" disabled={saving || testing || !baseUrl.trim() || !model.trim()} onClick={() => void save()}>
+        <Button variant="accent" size="sm" disabled={saving || testing || !timeoutValid || !baseUrl.trim() || !model.trim()} onClick={() => void save()}>
           {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
           保存配置
         </Button>
-        <Button variant="outline" size="sm" disabled={saving || testing || !baseUrl.trim() || !model.trim()} onClick={() => void test()}>
+        <Button variant="outline" size="sm" disabled={saving || testing || !timeoutValid || !baseUrl.trim() || !model.trim()} onClick={() => void test()}>
           {testing ? <Loader2 size={13} className="animate-spin" /> : <PlugZap size={13} />}
           测试连接
         </Button>

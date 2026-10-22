@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   Check,
@@ -53,6 +53,10 @@ export function ReportDetail({ report }: ReportDetailProps) {
   const [notice, setNotice] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const draftRef = useRef({ title, contentMarkdown });
+  const persistedRef = useRef({ title: report.title, contentMarkdown: report.contentMarkdown });
+  const reportIdRef = useRef(report.id);
+  draftRef.current = { title, contentMarkdown };
 
   useEffect(() => {
     setTitle(report.title);
@@ -63,6 +67,25 @@ export function ReportDetail({ report }: ReportDetailProps) {
     setDeleteConfirm(false);
     setView('edit');
   }, [report.id]);
+
+  useEffect(() => {
+    reportIdRef.current = report.id;
+    persistedRef.current = { title: report.title, contentMarkdown: report.contentMarkdown };
+  }, [report.id, report.title, report.contentMarkdown]);
+
+  useEffect(
+    () => () => {
+      const draft = draftRef.current;
+      const persisted = persistedRef.current;
+      const patch: ReportUpdateInput = {};
+      if (draft.title.trim() && draft.title.trim() !== persisted.title) patch.title = draft.title.trim();
+      if (draft.contentMarkdown !== persisted.contentMarkdown) patch.contentMarkdown = draft.contentMarkdown;
+      if (Object.keys(patch).length > 0) {
+        void window.memex.reports.update(reportIdRef.current, patch).catch(() => undefined);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     const cleanTitle = title.trim();
@@ -88,8 +111,10 @@ export function ReportDetail({ report }: ReportDetailProps) {
     let cancelled = false;
     const timer = window.setTimeout(async () => {
       try {
+        const savedDraft = { title: title.trim(), contentMarkdown };
         const updated = await window.memex.reports.update(report.id, patch);
         if (cancelled) return;
+        persistedRef.current = savedDraft;
         useReportStore.getState().applyReport(updated);
         setSaveState('saved');
       } catch (error) {
@@ -249,4 +274,3 @@ export function ReportDetail({ report }: ReportDetailProps) {
     </motion.section>
   );
 }
-

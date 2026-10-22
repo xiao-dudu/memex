@@ -96,6 +96,15 @@ export function createReportService(deps: ReportServiceDependencies): ReportServ
         throw new Error('任务数据已变化，请重新加载');
       }
 
+      const periodCandidates = deps.reports.listCandidates(parsed.periodStart, parsed.periodEnd);
+      if (periodCandidates.length > MAX_CANDIDATES) {
+        throw new Error('候选任务超过 1,000 条，请缩小时间范围');
+      }
+      const candidateIds = new Set(periodCandidates.map((candidate) => candidate.id));
+      if (selected.some((task) => !candidateIds.has(task.id))) {
+        throw new Error('任务数据已变化，请重新加载');
+      }
+
       const linkedNotes = parsed.includeNotes ? deps.reports.getLinkedNotes(parsed.taskIds) : [];
       const oversizedNote = linkedNotes.find((note) => note.plainText.length > MAX_NOTE_CHARS);
       if (oversizedNote) {
@@ -136,7 +145,7 @@ export function createReportService(deps: ReportServiceDependencies): ReportServ
           baseUrl: credentials.baseUrl,
           model: credentials.model,
           apiKey: credentials.apiKey,
-          timeoutMs: DEFAULT_TIMEOUT_MS,
+          timeoutMs: credentials.timeoutMs ?? DEFAULT_TIMEOUT_MS,
         },
         messages,
         undefined,

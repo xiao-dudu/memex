@@ -3,11 +3,12 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { AiServiceConfig, MemexApi } from '@memex/shared';
 import { AiServiceSettings } from '../AiServiceSettings';
 
-const emptyConfig: AiServiceConfig = { baseUrl: '', model: '', hasApiKey: false };
+const emptyConfig: AiServiceConfig = { baseUrl: '', model: '', hasApiKey: false, timeoutMs: 90_000 };
 const savedConfig: AiServiceConfig = {
   baseUrl: 'https://api.example.com/v1',
   model: 'm1',
   hasApiKey: true,
+  timeoutMs: 90_000,
 };
 
 beforeEach(() => {
@@ -30,6 +31,7 @@ describe('AI service settings', () => {
     fireEvent.change(await screen.findByLabelText('Base URL'), { target: { value: 'https://api.example.com/v1' } });
     fireEvent.change(screen.getByLabelText('模型'), { target: { value: 'm1' } });
     fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'secret' } });
+    fireEvent.change(screen.getByLabelText('超时时间（秒）'), { target: { value: '30' } });
     fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
 
     await waitFor(() =>
@@ -37,6 +39,7 @@ describe('AI service settings', () => {
         baseUrl: 'https://api.example.com/v1',
         model: 'm1',
         apiKey: 'secret',
+        timeoutMs: 30_000,
       }),
     );
     expect(screen.queryByDisplayValue('secret')).toBeNull();

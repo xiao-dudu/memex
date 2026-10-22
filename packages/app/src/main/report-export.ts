@@ -41,7 +41,8 @@ function safeTitle(title: string): string {
 export function reportFileName(report: Report, extension: 'md' | 'pdf' = 'md'): string {
   const start = formatLocalDate(report.periodStart);
   const end = formatLocalDate(report.periodEnd - 1);
-  const title = safeTitle(report.title) || '周报';
+  const normalizedTitle = report.title.trim();
+  const title = normalizedTitle === `${start} 至 ${end} 周报` ? '周报' : safeTitle(normalizedTitle) || '周报';
   const stem = `${start}-${end}-${title}`;
   return `${stem}.${extension}`;
 }
@@ -160,5 +161,3 @@ export async function exportReportPdf(
     if (window && !window.isDestroyed()) window.destroy();
   }
 }
-
-

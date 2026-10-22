@@ -25,7 +25,7 @@ export function ReportWorkspace() {
   const activeTemplateId = useReportStore((state) => state.activeTemplateId);
   const templates = useReportStore((state) => state.templates);
   if (mode === 'new') return <NewReportWizard />;
-  if (mode === 'report') return activeReport ? <ReportDetail report={activeReport} /> : <EmptyWorkspace />;
+  if (mode === 'report') return activeReport ? <ReportDetail key={activeReport.id} report={activeReport} /> : <EmptyWorkspace />;
   if (mode === 'template') {
     return <TemplateEditor template={templates.find((template) => template.id === activeTemplateId) ?? null} />;
   }

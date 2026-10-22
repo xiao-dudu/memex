@@ -20,6 +20,11 @@ describe('report export', () => {
     ).toBe('2026-10-13-2026-10-19-周报-项目-总结-最终.md');
   });
 
+  it('uses the required stem for a default report title', () => {
+    expect(reportFileName({ ...report, title: '2026-10-13 至 2026-10-19 周报' } as Report)).toBe(
+      '2026-10-13-2026-10-19-周报.md',
+    );
+  });
   it('renders Markdown while escaping raw HTML', () => {
     const html = renderMarkdownHtml('# 标题\n<script>alert(1)</script>\n\n- 项目');
     expect(html).toContain('<h1>标题</h1>');

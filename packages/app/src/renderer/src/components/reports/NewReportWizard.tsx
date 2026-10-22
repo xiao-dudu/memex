@@ -48,6 +48,7 @@ export function NewReportWizard() {
   const templates = useReportStore((state) => state.templates);
   const setActiveReport = useReportStore((state) => state.setActiveReport);
   const setSettingsOpen = useAppStore((state) => state.setSettingsOpen);
+  const settingsOpen = useAppStore((state) => state.settingsOpen);
 
   const [periodStart, setPeriodStart] = useState(initialPeriod.start);
   const [periodEnd, setPeriodEnd] = useState(initialPeriod.end);
@@ -65,6 +66,7 @@ export function NewReportWizard() {
   const [error, setError] = useState<string | null>(null);
   const cancelledByUser = useRef(false);
   const prefillApplied = useRef(false);
+  const candidateRequestId = useRef(0);
 
   useEffect(() => {
     let active = true;
@@ -85,8 +87,6 @@ export function NewReportWizard() {
           });
         }
 
-        const config = await window.memex.ai.getConfig();
-        if (active) setAiConfig(config);
       } catch (initError) {
         if (active) setError(errorMessage(initError));
       } finally {
@@ -98,6 +98,28 @@ export function NewReportWizard() {
       active = false;
     };
   }, []);
+
+
+  useEffect(() => {
+    if (settingsOpen) return;
+    let active = true;
+    setAiLoading(true);
+    void window.memex.ai
+      .getConfig()
+      .then((config) => {
+        if (active) setAiConfig(config);
+      })
+      .catch((configError) => {
+        if (active) setError(errorMessage(configError));
+      })
+      .finally(() => {
+        if (active) setAiLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [settingsOpen]);
+
 
   useEffect(() => {
     if (!generating) return;
@@ -128,6 +150,8 @@ export function NewReportWizard() {
   const allSelected = candidates.length > 0 && selectedTasks.length === candidates.length;
 
   const resetCandidates = () => {
+    candidateRequestId.current += 1;
+    setLoadingCandidates(false);
     setCandidates([]);
     setSelectedIds(new Set());
     setLoaded(false);
@@ -136,6 +160,7 @@ export function NewReportWizard() {
 
   const loadCandidates = async () => {
     if (!period) return;
+    const requestId = ++candidateRequestId.current;
     setLoadingCandidates(true);
     setError(null);
     try {
@@ -143,6 +168,7 @@ export function NewReportWizard() {
         periodStart: period.start,
         periodEnd: period.end,
       });
+      if (requestId !== candidateRequestId.current) return;
       setCandidates(result);
       let initiallySelected = result;
       if (!prefillApplied.current && prefill?.taskIds.length) {
@@ -153,9 +179,9 @@ export function NewReportWizard() {
       setSelectedIds(new Set(initiallySelected.map((task) => task.id)));
       setLoaded(true);
     } catch (loadError) {
-      setError(errorMessage(loadError));
+      if (requestId === candidateRequestId.current) setError(errorMessage(loadError));
     } finally {
-      setLoadingCandidates(false);
+      if (requestId === candidateRequestId.current) setLoadingCandidates(false);
     }
   };
 
@@ -202,11 +228,10 @@ export function NewReportWizard() {
         taskIds: selectedTasks.map((task) => task.id),
         includeNotes,
       });
-      if (cancelledByUser.current) return;
       setGenerating(false);
       setActiveReport(report);
     } catch (generateError) {
-      if (!cancelledByUser.current) setError(errorMessage(generateError));
+      setError(cancelledByUser.current ? '已取消生成' : errorMessage(generateError));
       setGenerating(false);
     }
   };
@@ -255,6 +280,7 @@ export function NewReportWizard() {
                 <span className="text-[10.5px] text-[var(--muted)]">开始日期</span>
                 <Input
                   type="date"
+                  disabled={loadingCandidates}
                   value={periodStart}
                   onChange={(event) => {
                     setPeriodStart(event.target.value);
@@ -266,6 +292,7 @@ export function NewReportWizard() {
                 <span className="text-[10.5px] text-[var(--muted)]">结束日期</span>
                 <Input
                   type="date"
+                  disabled={loadingCandidates}
                   value={periodEnd}
                   onChange={(event) => {
                     setPeriodEnd(event.target.value);
@@ -475,7 +502,3 @@ export function NewReportWizard() {
     </div>
   );
 }
-
-
-
-

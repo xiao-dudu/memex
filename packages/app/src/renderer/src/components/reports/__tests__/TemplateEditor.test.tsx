@@ -66,6 +66,20 @@ describe('template editor', () => {
     );
   });
 
+  it('can copy an existing custom template', async () => {
+    render(<TemplateEditor template={custom} />);
+    fireEvent.click(screen.getByRole('button', { name: '复制模板' }));
+    await waitFor(() =>
+      expect(window.memex.templates.create).toHaveBeenCalledWith(
+        expect.objectContaining({ name: '项目周报（副本）' }),
+      ),
+    );
+  });
+
+  it('keeps built-in allow-empty controls immutable', () => {
+    render(<TemplateEditor template={builtin} />);
+    expect((screen.getByLabelText('允许章节 1 为空') as HTMLButtonElement).disabled).toBe(true);
+  });
   it('adds a section', () => {
     render(<TemplateEditor template={custom} />);
     fireEvent.click(screen.getByRole('button', { name: '添加章节' }));

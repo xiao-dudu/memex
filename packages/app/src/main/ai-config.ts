@@ -4,6 +4,8 @@ import { aiConfigPatchSchema, type AiServiceConfig, type AiServiceConfigPatch } 
 const BASE_URL_KEY = 'ai_base_url';
 const MODEL_KEY = 'ai_model';
 const API_KEY_CIPHERTEXT_KEY = 'ai_api_key_encrypted';
+const TIMEOUT_MS_KEY = 'ai_timeout_ms';
+const DEFAULT_TIMEOUT_MS = 90_000;
 
 export interface SecretAdapter {
   isEncryptionAvailable(): boolean;
@@ -20,7 +22,7 @@ export interface ElectronSafeStorageApi {
 export interface AiConfigStore {
   getPublic(): AiServiceConfig;
   save(patch: AiServiceConfigPatch): AiServiceConfig;
-  getCredentials(): { baseUrl: string; model: string; apiKey: string | null };
+  getCredentials(): { baseUrl: string; model: string; apiKey: string | null; timeoutMs: number };
 }
 
 export function createElectronSecretAdapter(api: ElectronSafeStorageApi): SecretAdapter {
@@ -39,6 +41,17 @@ function readStringSetting(db: MemexDatabase, key: string): string {
     return typeof value === 'string' ? value : '';
   } catch {
     return '';
+  }
+}
+
+function readNumberSetting(db: MemexDatabase, key: string, fallback: number): number {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
+  if (!row) return fallback;
+  try {
+    const value = JSON.parse(row.value) as unknown;
+    return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+  } catch {
+    return fallback;
   }
 }
 
@@ -61,6 +74,7 @@ export function createAiConfigStore(db: MemexDatabase, secretAdapter: SecretAdap
         baseUrl: readStringSetting(db, BASE_URL_KEY),
         model: readStringSetting(db, MODEL_KEY),
         hasApiKey: getCiphertext() !== null,
+        timeoutMs: readNumberSetting(db, TIMEOUT_MS_KEY, DEFAULT_TIMEOUT_MS),
       };
     },
 
@@ -77,6 +91,9 @@ export function createAiConfigStore(db: MemexDatabase, secretAdapter: SecretAdap
       const apply = db.transaction(() => {
         if (value.baseUrl !== undefined) writeStringSetting(db, BASE_URL_KEY, value.baseUrl);
         if (value.model !== undefined) writeStringSetting(db, MODEL_KEY, value.model);
+        if (value.timeoutMs !== undefined) {
+          db.prepare("INSERT INTO settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(TIMEOUT_MS_KEY, JSON.stringify(value.timeoutMs));
+        }
         if (encryptedKey === null) {
           db.prepare('DELETE FROM settings WHERE key = ?').run(API_KEY_CIPHERTEXT_KEY);
         } else if (encryptedKey !== undefined) {
@@ -94,13 +111,14 @@ export function createAiConfigStore(db: MemexDatabase, secretAdapter: SecretAdap
         try {
           apiKey = secretAdapter.decryptString(Buffer.from(encrypted, 'base64'));
         } catch {
-          apiKey = null;
+          throw new Error('API Key 无法解密，请重新配置');
         }
       }
       return {
         baseUrl: readStringSetting(db, BASE_URL_KEY),
         model: readStringSetting(db, MODEL_KEY),
         apiKey,
+        timeoutMs: readNumberSetting(db, TIMEOUT_MS_KEY, DEFAULT_TIMEOUT_MS),
       };
     },
   };
