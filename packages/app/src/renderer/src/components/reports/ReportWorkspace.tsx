@@ -1,6 +1,7 @@
-import { BookTemplate, FilePlus2, FileText } from 'lucide-react';
+import { BookTemplate, FileText } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useReportStore } from '../../store/useReportStore';
+import { NewReportWizard } from './NewReportWizard';
 
 function EmptyWorkspace() {
   return (
@@ -12,30 +13,6 @@ function EmptyWorkspace() {
       <p className="mt-1 max-w-sm text-xs leading-5 text-[var(--faint)]">
         周报会保存完整快照，后续修改任务、笔记或模板不会改变历史内容。
       </p>
-    </div>
-  );
-}
-
-function NewReportWorkspace() {
-  return (
-    <div className="thin-scroll flex flex-1 overflow-y-auto bg-[var(--bg)]">
-      <div className="mx-auto w-full max-w-[820px] px-10 py-9">
-        <div className="mb-7 flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent)]">
-            <FilePlus2 size={20} />
-          </div>
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">新建周报</h1>
-            <p className="mt-0.5 text-xs text-[var(--faint)]">选择时间范围、模板和要纳入的任务。</p>
-          </div>
-        </div>
-        <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-6 shadow-soft">
-          <p className="text-sm font-medium">准备生成新周报</p>
-          <p className="mt-2 text-xs leading-6 text-[var(--muted)]">
-            默认范围为最近 7 个自然日。加载候选任务后，可逐项调整发送给模型的内容。
-          </p>
-        </div>
-      </div>
     </div>
   );
 }
@@ -138,8 +115,9 @@ function TemplateWorkspace() {
 
 export function ReportWorkspace() {
   const mode = useReportStore((state) => state.mode);
-  if (mode === 'new') return <NewReportWorkspace />;
+  if (mode === 'new') return <NewReportWizard />;
   if (mode === 'report') return <ReportDetailPreview />;
   if (mode === 'template') return <TemplateWorkspace />;
   return <EmptyWorkspace />;
 }
+

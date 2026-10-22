@@ -17,6 +17,7 @@ interface ReportState {
   load: () => Promise<void>;
   setTab: (tab: ReportTab) => void;
   selectReport: (id: string) => Promise<void>;
+  setActiveReport: (report: Report) => void;
   startNewReport: () => void;
   selectTemplate: (id: string) => void;
   startNewTemplate: () => void;
@@ -80,6 +81,11 @@ export const useReportStore = create<ReportState>((set, get) => ({
     }
   },
 
+  setActiveReport(report) {
+    set({ activeReport: report, activeTemplateId: null, mode: 'report', tab: 'reports', error: null });
+    void get().load();
+  },
+
   startNewReport() {
     set({ tab: 'reports', mode: 'new', activeReport: null, error: null });
     useAppStore.getState().setListCollapsed(false);
@@ -110,3 +116,4 @@ export const useReportStore = create<ReportState>((set, get) => ({
     }
   },
 }));
+
