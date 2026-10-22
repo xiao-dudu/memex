@@ -143,6 +143,8 @@ export interface ExportBundle {
   tags: unknown[];
   taskTags: unknown[];
   noteTags: unknown[];
+  reportTemplates: unknown[];
+  reports: unknown[];
 }
 
 export type UpdatePhase =

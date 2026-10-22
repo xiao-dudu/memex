@@ -7,6 +7,7 @@ import { runMigrations } from '../db/migrate.js';
 import { exportAll, purgeExpiredTrash } from '../export.js';
 import { createTaskRepository } from '../repositories/tasks.js';
 import { createNoteRepository } from '../repositories/notes.js';
+import { createReportTemplateRepository } from '../repositories/report-templates.js';
 import type { MemexDatabase } from '../db/database.js';
 
 let db: MemexDatabase;
@@ -21,11 +22,29 @@ describe('export', () => {
     createTaskRepository(db).create({ title: '导出任务', tags: ['工作'] });
     createNoteRepository(db).create({ contentJson: '{}', plainText: '导出笔记' });
     const bundle = exportAll(db, new Date('2026-10-20T00:00:00Z'));
-    expect(bundle.schemaVersion).toBe(1);
+    expect(bundle.schemaVersion).toBe(2);
     expect(bundle.exportedAt).toBe('2026-10-20T00:00:00.000Z');
     expect(bundle.tasks).toHaveLength(1);
     expect(bundle.notes).toHaveLength(1);
     expect(bundle.tags).toHaveLength(1);
+    expect(bundle.reportTemplates).toHaveLength(1);
+    expect(bundle.reports).toHaveLength(0);
+  });
+
+  it('exports report templates without settings or credentials', () => {
+    createReportTemplateRepository(db).create({
+      name: '周报模板',
+      basePrompt: 'x',
+      sections: [{ id: 'a', title: 'A', instruction: '', allowEmpty: true }],
+    });
+    db.prepare("INSERT OR REPLACE INTO settings(key, value) VALUES ('ai_api_key_encrypted', 'ciphertext')").run();
+
+    const bundle = exportAll(db, new Date('2026-10-22T00:00:00Z'));
+    expect(bundle.schemaVersion).toBe(2);
+    expect(bundle.reportTemplates).toHaveLength(2);
+    expect(bundle.reports).toHaveLength(0);
+    expect(JSON.stringify(bundle)).not.toContain('ai_api_key_encrypted');
+    expect(JSON.stringify(bundle)).not.toContain('ciphertext');
   });
 });
 

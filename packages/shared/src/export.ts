@@ -11,6 +11,8 @@ export function exportAll(db: MemexDatabase, now = new Date()): ExportBundle {
     tags: db.prepare('SELECT * FROM tags ORDER BY name').all(),
     taskTags: db.prepare('SELECT * FROM task_tags').all(),
     noteTags: db.prepare('SELECT * FROM note_tags').all(),
+    reportTemplates: db.prepare('SELECT * FROM report_templates ORDER BY created_at').all(),
+    reports: db.prepare('SELECT * FROM reports ORDER BY created_at').all(),
   };
 }
 
@@ -20,3 +22,4 @@ export function purgeExpiredTrash(db: MemexDatabase, now = Date.now(), days = 30
   const notes = db.prepare('DELETE FROM notes WHERE deleted_at IS NOT NULL AND deleted_at < ?').run(cutoff);
   return Number(tasks.changes) + Number(notes.changes);
 }
+
