@@ -15,6 +15,8 @@ export type { TagRepository } from './repositories/tags.js';
 export { createSearchRepository } from './repositories/search.js';
 export type { SearchRepository } from './repositories/search.js';
 export { createSettingsRepository } from './repositories/settings.js';
+export { createReportTemplateRepository } from './repositories/report-templates.js';
+export type { ReportTemplateRepository } from './repositories/report-templates.js';
 export type { SettingsRepository } from './repositories/settings.js';
 export { tagColor, TAG_COLORS } from './repositories/tag-color.js';
 
@@ -22,3 +24,4 @@ export { backupDatabase, listBackups, pruneBackups, timestampForFile } from './b
 export { exportAll, purgeExpiredTrash } from './export.js';
 export * from './reports/types.js';
 export * from './reports/validation.js';
+
