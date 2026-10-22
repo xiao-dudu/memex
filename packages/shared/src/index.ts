@@ -26,5 +26,7 @@ export { backupDatabase, listBackups, pruneBackups, timestampForFile } from './b
 export { exportAll, purgeExpiredTrash } from './export.js';
 export * from './reports/types.js';
 export * from './reports/validation.js';
+export * from './reports/prompt-rules.js';
+
 
 
