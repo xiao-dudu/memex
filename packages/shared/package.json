@@ -13,6 +13,10 @@
     "./ipc": {
       "types": "./dist/ipc.d.ts",
       "import": "./dist/ipc.js"
+    },
+    "./reports": {
+      "types": "./dist/reports/index.d.ts",
+      "import": "./dist/reports/index.js"
     }
   },
   "scripts": {

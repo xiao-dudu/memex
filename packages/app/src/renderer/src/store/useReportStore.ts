@@ -32,6 +32,8 @@ interface ReportState {
   regenerateReport: (report: Report) => void;
   selectTemplate: (id: string) => void;
   startNewTemplate: () => void;
+  upsertTemplate: (template: ReportTemplate) => void;
+  removeTemplate: (id: string) => Promise<void>;
   removeReport: (id: string) => Promise<void>;
 }
 
@@ -176,6 +178,35 @@ export const useReportStore = create<ReportState>((set, get) => ({
     useAppStore.getState().setListCollapsed(false);
   },
 
+  upsertTemplate(template) {
+    const exists = get().templates.some((item) => item.id === template.id);
+    set({
+      templates: exists
+        ? get().templates.map((item) => (item.id === template.id ? template : item))
+        : [template, ...get().templates],
+      activeTemplateId: template.id,
+      activeReport: null,
+      mode: 'template',
+      tab: 'templates',
+      error: null,
+    });
+  },
+
+  async removeTemplate(id) {
+    try {
+      await window.memex.templates.remove(id);
+      const wasActive = get().activeTemplateId === id;
+      set({
+        templates: get().templates.filter((template) => template.id !== id),
+        activeTemplateId: wasActive ? null : get().activeTemplateId,
+        mode: wasActive ? 'empty' : get().mode,
+        error: null,
+      });
+    } catch (error) {
+      set({ error: errorMessage(error) });
+    }
+  },
+
   async removeReport(id) {
     try {
       await window.memex.reports.remove(id);
@@ -191,3 +222,4 @@ export const useReportStore = create<ReportState>((set, get) => ({
     }
   },
 }));
+
