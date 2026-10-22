@@ -1,4 +1,4 @@
-import { app } from 'electron';
+import { app, safeStorage } from 'electron';
 import { join } from 'node:path';
 import {
   createNoteRepository,
@@ -10,6 +10,7 @@ import {
   runMigrations,
   type MemexDatabase,
 } from '@memex/shared';
+import { createAiConfigStore, createElectronSecretAdapter } from './ai-config.js';
 
 let database: MemexDatabase | null = null;
 let databasePath = '';
@@ -22,6 +23,7 @@ function buildRepositories(db: MemexDatabase) {
     tags: createTagRepository(db),
     search: createSearchRepository(db),
     settings: createSettingsRepository(db),
+    aiConfig: createAiConfigStore(db, createElectronSecretAdapter(safeStorage)),
   };
 }
 
@@ -58,3 +60,4 @@ export function closeDatabase(): void {
   database = null;
   repositories = null;
 }
+
