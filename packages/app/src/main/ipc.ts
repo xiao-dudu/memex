@@ -1,28 +1,62 @@
-import { app, ipcMain, nativeTheme } from 'electron';
+import { app, ipcMain, nativeTheme, net } from 'electron';
 import {
   IPC,
+  aiConfigPatchSchema,
   noteCreateSchema,
   noteFilterSchema,
   noteUpdateSchema,
+  reportCandidateQuerySchema,
+  reportGenerateSchema,
+  reportTemplateCreateSchema,
+  reportTemplateUpdateSchema,
+  reportUpdateSchema,
   searchQuerySchema,
   settingsPatchSchema,
   taskCreateSchema,
   taskFilterSchema,
   taskUpdateSchema,
+  type AiServiceConfigPatch,
   type NoteInput,
   type NotePatch,
+  type ReportGenerateInput,
+  type ReportTemplateInput,
+  type ReportTemplatePatch,
+  type ReportUpdateInput,
   type TaskInput,
   type TaskPatch,
 } from '@memex/shared';
 import { getDbPath, getRepositories } from './db.js';
 import { buildMcpConfig, backupNow, copyMcpConfig, exportJson } from './data.js';
+import { testAiConnection, type FetchLike } from './ai-client.js';
+import { exportReportMarkdown, exportReportPdf } from './report-export.js';
 import { getUpdateService } from './updater.js';
 import { getMainWindow, showMainWindow } from './windows/main.js';
 import { hideQuickCapture } from './windows/quick-capture.js';
 
+let reportGenerationController: AbortController | null = null;
+const netFetch = ((input, init) => net.fetch(String(input), init)) as FetchLike;
+
 function idSchema(value: unknown): string {
   if (typeof value !== 'string' || value.length === 0) throw new Error('无效的 ID');
   return value;
+}
+
+function reportForExport(id: string) {
+  const report = getRepositories().reports.get(id);
+  if (!report) throw new Error('报告不存在');
+  return report;
+}
+
+function draftAiConfig(patch?: AiServiceConfigPatch) {
+  const parsed = aiConfigPatchSchema.parse(patch ?? {});
+  const stored = getRepositories().aiConfig.getCredentials();
+  const baseUrl = parsed.baseUrl ?? stored.baseUrl;
+  const model = parsed.model ?? stored.model;
+  let apiKey = stored.apiKey;
+  if (parsed.clearApiKey) apiKey = null;
+  else if (parsed.apiKey !== undefined) apiKey = parsed.apiKey || null;
+  if (!baseUrl.trim() || !model.trim()) throw new Error('请先填写 Base URL 和模型名称');
+  return { baseUrl, model, apiKey, timeoutMs: 15_000 };
 }
 
 export function registerIpcHandlers(): void {
@@ -86,6 +120,62 @@ export function registerIpcHandlers(): void {
       app.setLoginItemSettings({ openAtLogin: parsed.autoLaunch });
     }
     return settings;
+  });
+
+  ipcMain.handle(IPC.templatesList, () => getRepositories().reportTemplates.list());
+  ipcMain.handle(IPC.templatesGet, (_event, id) => getRepositories().reportTemplates.get(idSchema(id)));
+  ipcMain.handle(IPC.templatesCreate, (_event, input) => {
+    const parsed = reportTemplateCreateSchema.parse(input);
+    return getRepositories().reportTemplates.create(parsed as ReportTemplateInput);
+  });
+  ipcMain.handle(IPC.templatesUpdate, (_event, id, patch) => {
+    const parsed = reportTemplateUpdateSchema.parse(patch);
+    return getRepositories().reportTemplates.update(idSchema(id), parsed as ReportTemplatePatch);
+  });
+  ipcMain.handle(IPC.templatesDelete, (_event, id) => getRepositories().reportTemplates.remove(idSchema(id)));
+
+  ipcMain.handle(IPC.reportsList, () => getRepositories().reports.list());
+  ipcMain.handle(IPC.reportsGet, (_event, id) => getRepositories().reports.get(idSchema(id)));
+
+  ipcMain.handle(IPC.reportsCandidates, (_event, query) => {
+    const parsed = reportCandidateQuerySchema.parse(query);
+    return getRepositories().reportService.listCandidates(parsed.periodStart, parsed.periodEnd);
+  });
+
+  ipcMain.handle(IPC.reportsGenerate, async (_event, input) => {
+    if (reportGenerationController) throw new Error('已有周报正在生成');
+    const parsed = reportGenerateSchema.parse(input) as ReportGenerateInput;
+    const controller = new AbortController();
+    reportGenerationController = controller;
+    try {
+      return await getRepositories().reportService.generate(parsed, controller.signal);
+    } finally {
+      if (reportGenerationController === controller) reportGenerationController = null;
+    }
+  });
+
+  ipcMain.handle(IPC.reportsCancel, () => {
+    reportGenerationController?.abort();
+  });
+
+  ipcMain.handle(IPC.reportsUpdate, (_event, id, patch) => {
+    const parsed = reportUpdateSchema.parse(patch);
+    return getRepositories().reports.update(idSchema(id), parsed as ReportUpdateInput);
+  });
+  ipcMain.handle(IPC.reportsDelete, (_event, id) => getRepositories().reports.remove(idSchema(id)));
+  ipcMain.handle(IPC.reportsExportMarkdown, (_event, id) =>
+    exportReportMarkdown(reportForExport(idSchema(id))),
+  );
+  ipcMain.handle(IPC.reportsExportPdf, (_event, id) => exportReportPdf(reportForExport(idSchema(id))));
+
+  ipcMain.handle(IPC.aiGetConfig, () => getRepositories().aiConfig.getPublic());
+  ipcMain.handle(IPC.aiUpdateConfig, (_event, patch) => {
+    const parsed = aiConfigPatchSchema.parse(patch);
+    return getRepositories().aiConfig.save(parsed);
+  });
+  ipcMain.handle(IPC.aiTestConnection, async (_event, patch) => {
+    const result = await testAiConnection(draftAiConfig(patch), netFetch);
+    return { ok: true as const, latencyMs: result.latencyMs };
   });
 
   ipcMain.handle(IPC.appInfo, () => ({

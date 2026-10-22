@@ -16,6 +16,18 @@ import type {
   TaskPatch,
   UpdateState,
 } from './types.js';
+import type {
+  AiServiceConfig,
+  AiServiceConfigPatch,
+  Report,
+  ReportCandidate,
+  ReportGenerateInput,
+  ReportSummary,
+  ReportTemplate,
+  ReportTemplateInput,
+  ReportTemplatePatch,
+  ReportUpdateInput,
+} from './reports/types.js';
 
 export interface MemexApi {
   tasks: {
@@ -45,6 +57,29 @@ export interface MemexApi {
   settings: {
     get(): Promise<MemexSettings>;
     update(patch: Partial<MemexSettings>): Promise<MemexSettings>;
+  };
+  templates: {
+    list(): Promise<ReportTemplate[]>;
+    get(id: string): Promise<ReportTemplate | null>;
+    create(input: ReportTemplateInput): Promise<ReportTemplate>;
+    update(id: string, patch: ReportTemplatePatch): Promise<ReportTemplate>;
+    remove(id: string): Promise<void>;
+  };
+  reports: {
+    list(): Promise<ReportSummary[]>;
+    get(id: string): Promise<Report | null>;
+    candidates(query: { periodStart: number; periodEnd: number }): Promise<ReportCandidate[]>;
+    generate(input: ReportGenerateInput): Promise<Report>;
+    cancel(): Promise<void>;
+    update(id: string, patch: ReportUpdateInput): Promise<Report>;
+    remove(id: string): Promise<void>;
+    exportMarkdown(id: string): Promise<string | null>;
+    exportPdf(id: string): Promise<string | null>;
+  };
+  ai: {
+    getConfig(): Promise<AiServiceConfig>;
+    updateConfig(patch: AiServiceConfigPatch): Promise<AiServiceConfig>;
+    testConnection(patch?: AiServiceConfigPatch): Promise<{ ok: true; latencyMs: number }>;
   };
   app: {
     info(): Promise<AppInfo>;
@@ -86,6 +121,23 @@ export const IPC = {
   search: 'search:query',
   settingsGet: 'settings:get',
   settingsUpdate: 'settings:update',
+  templatesList: 'templates:list',
+  templatesGet: 'templates:get',
+  templatesCreate: 'templates:create',
+  templatesUpdate: 'templates:update',
+  templatesDelete: 'templates:delete',
+  reportsList: 'reports:list',
+  reportsGet: 'reports:get',
+  reportsCandidates: 'reports:candidates',
+  reportsGenerate: 'reports:generate',
+  reportsCancel: 'reports:cancel',
+  reportsUpdate: 'reports:update',
+  reportsDelete: 'reports:delete',
+  reportsExportMarkdown: 'reports:export-markdown',
+  reportsExportPdf: 'reports:export-pdf',
+  aiGetConfig: 'ai:get-config',
+  aiUpdateConfig: 'ai:update-config',
+  aiTestConnection: 'ai:test-connection',
   appInfo: 'app:info',
   appCopyMcpConfig: 'app:copy-mcp-config',
   appBackupNow: 'app:backup-now',
