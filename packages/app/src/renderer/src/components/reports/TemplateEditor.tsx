@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Eye, Plus, Save, Trash2 } from 'lucide-react';
 import {
   reportTemplateCreateSchema,
@@ -35,6 +35,7 @@ export function TemplateEditor({ template }: TemplateEditorProps) {
   const [error, setError] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const justSaved = useRef(false);
 
   useEffect(() => {
     setName(template?.name ?? '');
@@ -43,7 +44,8 @@ export function TemplateEditor({ template }: TemplateEditorProps) {
     setSections(template?.sections ?? [newSection()]);
     setConstraints(template?.constraints ?? '');
     setSaving(false);
-    setSaved(false);
+    setSaved(justSaved.current);
+    justSaved.current = false;
     setError(null);
     setDeleteConfirm(false);
     setShowPreview(false);
@@ -102,6 +104,7 @@ export function TemplateEditor({ template }: TemplateEditorProps) {
         template && !template.isBuiltin
           ? await window.memex.templates.update(template.id, input)
           : await window.memex.templates.create(input);
+      justSaved.current = true;
       useReportStore.getState().upsertTemplate(savedTemplate);
       setSaved(true);
     } catch (saveError) {
@@ -121,6 +124,7 @@ export function TemplateEditor({ template }: TemplateEditorProps) {
         sections: sections.map((section) => ({ ...section, id: crypto.randomUUID() })),
       });
       const copied = await window.memex.templates.create(input);
+      justSaved.current = true;
       useReportStore.getState().upsertTemplate(copied);
       setSaved(true);
     } catch (copyError) {
@@ -260,4 +264,8 @@ export function TemplateEditor({ template }: TemplateEditorProps) {
     </div>
   );
 }
+
+
+
+
 

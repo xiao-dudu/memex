@@ -137,6 +137,7 @@ export function Sidebar() {
             笔记
           </button>
           <button
+            title="周报"
             onClick={() => setModule('reports')}
             className={cn(
               'flex h-7 flex-1 items-center justify-center gap-1 rounded-lg text-[11px] font-medium transition-all',
