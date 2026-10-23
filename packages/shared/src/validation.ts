@@ -67,6 +67,7 @@ export const noteFilterSchema = z.object({
 
 export const settingsPatchSchema = z.object({
   mcpAccessMode: mcpAccessSchema.optional(),
+  mcpTaskWrite: z.boolean().optional(),
   closeToTray: z.boolean().optional(),
   autoLaunch: z.boolean().optional(),
   quickCaptureHideOnBlur: z.boolean().optional(),
