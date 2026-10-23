@@ -42,7 +42,7 @@ describe('settings repository', () => {
   });
 
   it('settings 键损坏时保留默认值', () => {
-    db.prepare("INSERT INTO settings(key, value) VALUES ('mcp_task_write', 'not-json')").run();
+    db.prepare("INSERT OR REPLACE INTO settings(key, value) VALUES ('mcp_task_write', 'not-json')").run();
     expect(createSettingsRepository(db).get().mcpTaskWrite).toBe(false);
   });
 });

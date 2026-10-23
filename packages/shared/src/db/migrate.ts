@@ -113,6 +113,7 @@ END;
 
 INSERT OR IGNORE INTO settings(key, value) VALUES
   ('mcp_access_mode', '"tasks"'),
+  ('mcp_task_write', 'false'),
   ('close_to_tray', 'true'),
   ('auto_launch', 'false'),
   ('quick_capture_hide_on_blur', 'true'),

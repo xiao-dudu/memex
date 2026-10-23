@@ -29,3 +29,38 @@ export function readAccessMode(db: MemexDatabase): 'tasks' | 'all' {
     return 'tasks';
   }
 }
+
+export function readTaskWriteAccess(db: MemexDatabase): boolean {
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'mcp_task_write'").get() as { value: string } | undefined;
+  if (!row) return false;
+  try {
+    return JSON.parse(row.value) === true;
+  } catch {
+    return false;
+  }
+}
+
+export function withWritableDatabase<T>(dbPath: string, handler: (db: MemexDatabase) => T): T {
+  let db: MemexDatabase;
+  try {
+    db = openDatabase(dbPath);
+  } catch (error) {
+    throw new McpToolError('DB_OUTDATED', `无法打开数据库：${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  try {
+    if (getSchemaVersion(db) < LATEST_SCHEMA_VERSION) {
+      throw new McpToolError('DB_OUTDATED', '数据库结构已过期，请先打开 Memex 完成升级');
+    }
+    return handler(db);
+  } catch (error) {
+    if (error instanceof McpToolError) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    if (/locked|busy/i.test(message)) {
+      throw new McpToolError('DB_LOCKED', message);
+    }
+    throw error;
+  } finally {
+    db.close();
+  }
+}
