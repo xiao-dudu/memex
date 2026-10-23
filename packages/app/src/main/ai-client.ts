@@ -50,13 +50,21 @@ export interface AiCompletionResult {
 
 export type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
+interface ChatCompletionMessage {
+  content?: unknown;
+  reasoning_content?: unknown;
+  reasoning?: unknown;
+}
+
 interface ChatCompletionPayload {
-  choices?: Array<{ message?: { content?: unknown } }>;
+  choices?: Array<{ message?: ChatCompletionMessage; text?: unknown }>;
   usage?: {
     prompt_tokens?: unknown;
     completion_tokens?: unknown;
     total_tokens?: unknown;
   };
+  /** Some gateways wrap the standard payload: { success, data: { choices, usage } } */
+  data?: unknown;
 }
 
 function invalidConfig(message: string): AiRequestError {
@@ -118,6 +126,24 @@ function httpError(status: number, body = ''): AiRequestError {
   if (status === 429) return new AiRequestError('RATE_LIMIT', '请求过于频繁或额度不足');
   if (status >= 500) return new AiRequestError('SERVER', `模型服务异常（HTTP ${status}）`);
   return new AiRequestError('INVALID_RESPONSE', `模型服务请求失败（HTTP ${status}）`);
+}
+
+/**
+ * Accepts both the standard OpenAI payload and gateways that nest it inside a
+ * `data` field (e.g. `{ success: true, data: { choices, usage } }`).
+ */
+function unwrapCompletionPayload(payload: unknown): {
+  choices: NonNullable<ChatCompletionPayload['choices']>;
+  usage: ChatCompletionPayload['usage'];
+} {
+  if (!payload || typeof payload !== 'object') return { choices: [], usage: undefined };
+  const root = payload as ChatCompletionPayload;
+  if (Array.isArray(root.choices)) return { choices: root.choices, usage: root.usage };
+  if (root.data && typeof root.data === 'object') {
+    const nested = root.data as ChatCompletionPayload;
+    if (Array.isArray(nested.choices)) return { choices: nested.choices, usage: nested.usage ?? root.usage };
+  }
+  return { choices: [], usage: root.usage };
 }
 
 function normalizeContent(content: unknown): string | null {
@@ -209,9 +235,9 @@ export async function requestChatCompletion(
       throw httpError(response.status, snippet);
     }
 
-    let payload: ChatCompletionPayload;
+    let parsedPayload: unknown;
     try {
-      payload = (await Promise.race([response.json(), abortPromise])) as ChatCompletionPayload;
+      parsedPayload = (await Promise.race([response.json(), abortPromise])) as unknown;
     } catch (error) {
       if (error instanceof AiRequestError) throw error;
       if (abortReason === 'timeout') throw new AiRequestError('TIMEOUT', '模型请求超时');
@@ -219,12 +245,23 @@ export async function requestChatCompletion(
       throw new AiRequestError('INVALID_RESPONSE', '模型返回了无效的 JSON');
     }
 
-    const content = normalizeContent(payload.choices?.[0]?.message?.content);
-    if (content === null) throw new AiRequestError('INVALID_RESPONSE', '模型返回内容格式无效');
+    const { choices, usage } = unwrapCompletionPayload(parsedPayload);
+    const choice = choices[0];
+    const content = normalizeContent(choice?.message?.content) ?? normalizeContent(choice?.text);
+    if (content === null) {
+      const reasoning = choice?.message?.reasoning_content ?? choice?.message?.reasoning;
+      if (typeof reasoning === 'string' && reasoning.trim()) {
+        throw new AiRequestError(
+          'INVALID_RESPONSE',
+          '模型只返回了推理过程，正文为空，请更换模型或调大最大输出长度',
+        );
+      }
+      throw new AiRequestError('INVALID_RESPONSE', '模型返回内容格式无效');
+    }
     const cleaned = cleanMarkdownContent(content);
     if (!cleaned) throw new AiRequestError('EMPTY_RESPONSE', '模型返回内容为空');
 
-    return { content: cleaned, usage: mapUsage(payload.usage) };
+    return { content: cleaned, usage: mapUsage(usage) };
   } catch (error) {
     if (error instanceof AiRequestError) throw error;
     if (abortReason === 'timeout') throw new AiRequestError('TIMEOUT', '模型请求超时');

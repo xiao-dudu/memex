@@ -141,6 +141,43 @@ describe('requestChatCompletion', () => {
       ),
     ).rejects.toMatchObject({ code: 'CONTEXT_LENGTH' });
   });
+  it('unwraps gateways that nest the payload under a data field', async () => {
+    const result = await requestChatCompletion(
+      { baseUrl: 'https://gw.example.com/v1', model: 'm1', timeoutMs: 900 },
+      [{ role: 'user', content: 'x' }],
+      async () =>
+        jsonResponse({
+          success: true,
+          data: {
+            choices: [{ message: { role: 'assistant', content: '# 周报' } }],
+            usage: { prompt_tokens: 5, completion_tokens: 6, total_tokens: 11 },
+          },
+        }),
+    );
+
+    expect(result).toEqual({
+      content: '# 周报',
+      usage: { promptTokens: 5, completionTokens: 6, totalTokens: 11 },
+    });
+  });
+
+  it('accepts legacy completions text and reports reasoning-only responses', async () => {
+    const config = { baseUrl: 'https://api.example.com/v1', model: 'm1', timeoutMs: 900 };
+    const messages = [{ role: 'user' as const, content: 'x' }];
+
+    await expect(
+      requestChatCompletion(config, messages, async () => new Response(JSON.stringify({ choices: [{ text: '旧式输出' }] }))),
+    ).resolves.toMatchObject({ content: '旧式输出' });
+
+    await expect(
+      requestChatCompletion(
+        config,
+        messages,
+        async () => jsonResponse({ choices: [{ message: { content: null, reasoning_content: '思考中…' } }] }),
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE', message: expect.stringContaining('只返回了推理过程') });
+  });
+
   it('rejects empty, malformed and unsuccessful response bodies', async () => {
     const config = { baseUrl: 'https://api.example.com/v1', model: 'm1', timeoutMs: 900 };
     const messages = [{ role: 'user' as const, content: 'x' }];
