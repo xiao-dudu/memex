@@ -117,16 +117,11 @@ export function SettingsDialog() {
                     开启后，笔记全文会进入 AI 客户端的上下文，相当于发送给对应的模型服务商。请确认你接受这一点。
                   </p>
                 ) : null}
-                <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-[var(--line)] px-3 py-2">
-                  <label htmlFor="mcp-task-write" className="text-[11px] text-[var(--muted)]">
-                    允许 AI 修改任务
-                  </label>
-                  <input
-                    id="mcp-task-write"
-                    type="checkbox"
+                <div className="mt-3">
+                  <ToggleRow
+                    label="允许 AI 修改任务"
                     checked={settings.mcpTaskWrite}
-                    onChange={(event) => void updateSettings({ mcpTaskWrite: event.target.checked })}
-                    className="h-4 w-4 shrink-0 accent-[var(--accent)]"
+                    onChange={(checked) => void updateSettings({ mcpTaskWrite: checked })}
                   />
                 </div>
                 <p className="mt-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[10.5px] leading-5 text-amber-700 dark:text-amber-300">
@@ -332,6 +327,7 @@ function ToggleRow({ label, checked, onChange }: { label: string; checked: boole
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-label={label}
         onClick={() => onChange(!checked)}
         className={cn('relative h-5 w-9 rounded-full transition', checked ? 'bg-[var(--accent)]' : 'bg-[var(--line-strong)]')}
       >
