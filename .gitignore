@@ -21,6 +21,7 @@ docs/*
 # scratch and test data
 work/
 .dev-data/
+.superpowers/
 *.db
 *.db-wal
 *.db-shm
