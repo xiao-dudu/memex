@@ -87,4 +87,31 @@ describe('memex MCP server', () => {
     await client.close();
     await server.close();
   });
+
+  it('写入开关关闭时工具不可见且调用被拒绝', async () => {
+    const { server, client } = await connect();
+    const tools = await client.listTools();
+    expect(tools.tools.map((tool) => tool.name)).not.toContain('update_task');
+
+    const denied = await client.callTool({ name: 'update_task', arguments: { id: taskId, status: 'done' } });
+    expect(denied.isError).toBe(true);
+    expect(textOf(denied)).toContain('ACCESS_DENIED');
+
+    await client.close();
+    await server.close();
+  });
+
+  it('开启开关后工具立即可见，关闭后立即失效', async () => {
+    const { server, client } = await connect();
+    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'mcp_task_write'").run();
+    expect((await client.listTools()).tools.map((t) => t.name)).toContain('update_task');
+
+    db.prepare("UPDATE settings SET value = 'false' WHERE key = 'mcp_task_write'").run();
+    const denied = await client.callTool({ name: 'update_task', arguments: { id: taskId, status: 'done' } });
+    expect(denied.isError).toBe(true);
+    expect(textOf(denied)).toContain('ACCESS_DENIED');
+
+    await client.close();
+    await server.close();
+  });
 });

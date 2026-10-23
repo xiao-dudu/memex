@@ -1,7 +1,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { readAccessMode, withDatabase } from './access.js';
+import { readAccessMode, readTaskWriteAccess, withDatabase, withWritableDatabase } from './access.js';
 import { McpToolError, toErrorPayload } from './errors.js';
 import {
   getNote,
@@ -19,6 +19,16 @@ const statusSchema = z.enum(['todo', 'doing', 'done']);
 const prioritySchema = z.enum(['low', 'medium', 'high']);
 const limitSchema = z.number().int().min(1).max(100).default(20);
 const timeSchema = z.union([z.string().min(1), z.number().int()]);
+
+const updateTaskSchema = z.object({
+  id: z.string().min(1),
+  status: statusSchema.optional(),
+  priority: prioritySchema.optional(),
+  dueAt: z.union([z.string().min(1), z.number().int(), z.null()]).optional(),
+  title: z.string().min(1).optional(),
+  description: z.string().optional(),
+  tags: z.array(z.string().min(1).max(40)).optional(),
+});
 
 const listTasksSchema = z.object({
   status: statusSchema.optional(),
@@ -121,6 +131,27 @@ const NOTE_TOOLS = [
 
 const NOTE_TOOL_NAMES = new Set(NOTE_TOOLS.map((tool) => tool.name));
 
+const TASK_WRITE_TOOLS = [
+  {
+    name: 'update_task',
+    description: '更新 Memex 任务（可修改状态、优先级、截止时间、标题、描述和标签）。需要在 Memex 设置中开启任务写入。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: '任务 ID' },
+        status: { type: 'string', enum: ['todo', 'doing', 'done'], description: '任务状态' },
+        priority: { type: 'string', enum: ['low', 'medium', 'high'], description: '优先级' },
+        dueAt: { description: '截止时间：ISO 8601 字符串、null（清除截止时间）、或毫秒时间戳' },
+        title: { type: 'string', description: '任务标题' },
+        description: { type: 'string', description: '任务描述' },
+        tags: { type: 'array', items: { type: 'string' }, description: '标签列表' },
+      },
+      required: ['id'],
+      additionalProperties: false,
+    },
+  },
+];
+
 export interface CreateMemexServerOptions {
   dbPath: string;
 }
@@ -133,7 +164,9 @@ export function createMemexServer({ dbPath }: CreateMemexServerOptions): Server 
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     const mode = withDatabase(dbPath, readAccessMode);
-    return { tools: mode === 'all' ? [...TASK_TOOLS, ...NOTE_TOOLS] : TASK_TOOLS };
+    const canWrite = withDatabase(dbPath, readTaskWriteAccess);
+    const baseTools = mode === 'all' ? [...TASK_TOOLS, ...NOTE_TOOLS] : TASK_TOOLS;
+    return { tools: canWrite ? [...baseTools, ...TASK_WRITE_TOOLS] : baseTools };
   });
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -173,6 +206,10 @@ export function createMemexServer({ dbPath }: CreateMemexServerOptions): Server 
           case 'get_note': {
             const args = getSchema.parse(rawArgs);
             return getNote(db, args.id);
+          }
+          case 'update_task': {
+            const args = updateTaskSchema.parse(rawArgs);
+            throw new McpToolError('INVALID_ARGUMENT', '未实现');
           }
           default:
             throw new McpToolError('INVALID_ARGUMENT', `未知工具：${name}`);
