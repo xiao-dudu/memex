@@ -110,6 +110,7 @@ export function registerIpcHandlers(): void {
       autoLaunch: parsed.autoLaunch,
       quickCaptureHideOnBlur: parsed.quickCaptureHideOnBlur,
       theme: parsed.theme,
+      mcpTaskWrite: parsed.mcpTaskWrite,
     });
     if (parsed.autoLaunch !== undefined) {
       app.setLoginItemSettings({ openAtLogin: parsed.autoLaunch });
