@@ -13,8 +13,10 @@ build/
 .env.*
 !.env.example
 
-# local docs (not tracked)
-docs/
+# brainstorming specs and implementation plans (local only)
+docs/superpowers/
+docs/*
+!docs/*-release-notes.md
 
 # scratch and test data
 work/
