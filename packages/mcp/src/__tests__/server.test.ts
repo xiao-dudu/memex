@@ -115,3 +115,108 @@ describe('memex MCP server', () => {
     await server.close();
   });
 });
+
+describe('update_task tool', () => {
+  it('改状态时返回 changes 并联动 completedAt', async () => {
+    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'mcp_task_write'").run();
+    const { server, client } = await connect();
+    const updated = await client.callTool({ name: 'update_task', arguments: { id: taskId, status: 'done' } });
+    const payload = JSON.parse(textOf(updated)) as { task: { status: string; completedAt: string | null }; changes: string[] };
+    expect(payload.task.status).toBe('done');
+    expect(payload.task.completedAt).toMatch(/T.*Z$/);
+    expect(payload.changes).toEqual(['status']);
+    await client.close();
+    await server.close();
+  });
+
+  it('从 done 改回 todo 时清空 completedAt', async () => {
+    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'mcp_task_write'").run();
+    const { server, client } = await connect();
+    await client.callTool({ name: 'update_task', arguments: { id: taskId, status: 'done' } });
+    const reverted = await client.callTool({ name: 'update_task', arguments: { id: taskId, status: 'todo' } });
+    const payload = JSON.parse(textOf(reverted)) as { task: { completedAt: string | null } };
+    expect(payload.task.completedAt).toBeNull();
+    await client.close();
+    await server.close();
+  });
+
+  it('可同时改多个字段', async () => {
+    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'mcp_task_write'").run();
+    const { server, client } = await connect();
+    const result = await client.callTool({
+      name: 'update_task',
+      arguments: { id: taskId, priority: 'low', tags: ['工作', '紧急'] },
+    });
+    const payload = JSON.parse(textOf(result)) as { task: { priority: string; tags: string[] }; changes: string[] };
+    expect(payload.task.priority).toBe('low');
+    expect(payload.task.tags).toEqual(['工作', '紧急']);
+    expect(payload.changes.sort()).toEqual(['priority', 'tags']);
+    await client.close();
+    await server.close();
+  });
+
+  it('空数组可清空标签', async () => {
+    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'mcp_task_write'").run();
+    const { server, client } = await connect();
+    await client.callTool({ name: 'update_task', arguments: { id: taskId, tags: [] } });
+    const payload = JSON.parse(textOf(await client.callTool({ name: 'update_task', arguments: { id: taskId, status: 'doing' } }))) as { task: { tags: string[] } };
+    expect(payload.task.tags).toEqual([]);
+    await client.close();
+    await server.close();
+  });
+
+  it('任务不存在时返回 NOT_FOUND', async () => {
+    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'mcp_task_write'").run();
+    const { server, client } = await connect();
+    const result = await client.callTool({ name: 'update_task', arguments: { id: 'missing-id', status: 'done' } });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain('NOT_FOUND');
+    await client.close();
+    await server.close();
+  });
+
+  it('已软删除任务返回 NOT_FOUND', async () => {
+    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'mcp_task_write'").run();
+    const { server, client } = await connect();
+    createTaskRepository(db).softDelete(taskId);
+    const result = await client.callTool({ name: 'update_task', arguments: { id: taskId, status: 'done' } });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain('NOT_FOUND');
+    await client.close();
+    await server.close();
+  });
+
+  it('仅传 id 时返回 INVALID_ARGUMENT', async () => {
+    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'mcp_task_write'").run();
+    const { server, client } = await connect();
+    const result = await client.callTool({ name: 'update_task', arguments: { id: taskId } });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain('INVALID_ARGUMENT');
+    await client.close();
+    await server.close();
+  });
+
+  it('title 为空白时返回 INVALID_ARGUMENT', async () => {
+    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'mcp_task_write'").run();
+    const { server, client } = await connect();
+    const result = await client.callTool({ name: 'update_task', arguments: { id: taskId, title: '   ' } });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain('INVALID_ARGUMENT');
+    await client.close();
+    await server.close();
+  });
+
+  it('dueAt 可传 ISO 字符串与 null', async () => {
+    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'mcp_task_write'").run();
+    const { server, client } = await connect();
+    await client.callTool({ name: 'update_task', arguments: { id: taskId, dueAt: '2030-01-01T00:00:00.000Z' } });
+    const withDue = JSON.parse(textOf(await client.callTool({ name: 'update_task', arguments: { id: taskId, status: 'doing' } }))) as { task: { dueAt: string } };
+    expect(withDue.task.dueAt).toBe('2030-01-01T00:00:00.000Z');
+
+    await client.callTool({ name: 'update_task', arguments: { id: taskId, dueAt: null } });
+    const cleared = JSON.parse(textOf(await client.callTool({ name: 'update_task', arguments: { id: taskId, status: 'doing' } }))) as { task: { dueAt: string | null } };
+    expect(cleared.task.dueAt).toBeNull();
+    await client.close();
+    await server.close();
+  });
+});

@@ -13,6 +13,7 @@ import {
   serializeNote,
   serializeNoteSummary,
   serializeTask,
+  updateTask,
 } from './queries.js';
 
 const statusSchema = z.enum(['todo', 'doing', 'done']);
@@ -219,7 +220,7 @@ export function createMemexServer({ dbPath }: CreateMemexServerOptions): Server 
               throw new McpToolError('ACCESS_DENIED', '任务写入已关闭，请在 Memex 设置中开启');
             }
             const args = updateTaskSchema.parse(rawArgs);
-            throw new McpToolError('INVALID_ARGUMENT', '未实现');
+            return withWritableDatabase(dbPath, (handle) => updateTask(handle, args));
           }
           default:
             throw new McpToolError('INVALID_ARGUMENT', `未知工具：${name}`);
