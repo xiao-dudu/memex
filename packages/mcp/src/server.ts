@@ -141,7 +141,13 @@ const TASK_WRITE_TOOLS = [
         id: { type: 'string', description: '任务 ID' },
         status: { type: 'string', enum: ['todo', 'doing', 'done'], description: '任务状态' },
         priority: { type: 'string', enum: ['low', 'medium', 'high'], description: '优先级' },
-        dueAt: { description: '截止时间：ISO 8601 字符串、null（清除截止时间）、或毫秒时间戳' },
+        dueAt: {
+          anyOf: [
+            { type: 'string', description: 'ISO 8601 日期字符串' },
+            { type: 'number', description: '毫秒时间戳' },
+            { type: 'null', description: '清除截止时间' },
+          ],
+        },
         title: { type: 'string', description: '任务标题' },
         description: { type: 'string', description: '任务描述' },
         tags: { type: 'array', items: { type: 'string' }, description: '标签列表' },
@@ -208,6 +214,10 @@ export function createMemexServer({ dbPath }: CreateMemexServerOptions): Server 
             return getNote(db, args.id);
           }
           case 'update_task': {
+            const canWrite = withDatabase(dbPath, readTaskWriteAccess);
+            if (!canWrite) {
+              throw new McpToolError('ACCESS_DENIED', '任务写入已关闭，请在 Memex 设置中开启');
+            }
             const args = updateTaskSchema.parse(rawArgs);
             throw new McpToolError('INVALID_ARGUMENT', '未实现');
           }
