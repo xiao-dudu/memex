@@ -49,3 +49,6 @@ test-results/
 .qoder/
 .windsurf/
 skills-lock.json
+
+# 本地 agent 记忆与工作区（不追踪）
+.workbuddy-ai/

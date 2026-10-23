@@ -42,15 +42,34 @@ export function TaskDetail() {
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [propertiesCollapsed, setPropertiesCollapsed] = useState(readPropertiesCollapsed);
   const taskIdRef = useRef<string | null>(null);
+  // 上一次“已落库”的值。用来区分“本地草稿被用户改过”和“外部把库里的值改了”。
+  const lastSavedRef = useRef({ title: '', description: '' });
 
   useEffect(() => {
-    if (activeTask?.id !== taskIdRef.current) {
-      taskIdRef.current = activeTask?.id ?? null;
-      setTitle(activeTask?.title ?? '');
-      setDescription(activeTask?.description ?? '');
+    if (!activeTask) return;
+    const remote = { title: activeTask.title, description: activeTask.description ?? '' };
+
+    if (activeTask.id !== taskIdRef.current) {
+      taskIdRef.current = activeTask.id;
+      lastSavedRef.current = remote;
+      setTitle(remote.title);
+      setDescription(remote.description);
       setSaveState('idle');
+      return;
     }
-  }, [activeTask?.id, activeTask?.title, activeTask?.description]);
+
+    // 同一条任务被外部改写（列表里重命名、MCP 写入）：草稿干净时才同步过来。
+    // 不同步的话，下面的自动保存会把旧标题写回库里，把外面的修改覆盖掉。
+    const saved = lastSavedRef.current;
+    if (remote.title !== saved.title) {
+      lastSavedRef.current = { ...saved, title: remote.title };
+      setTitle((current) => (current === saved.title ? remote.title : current));
+    }
+    if (remote.description !== saved.description) {
+      lastSavedRef.current = { ...lastSavedRef.current, description: remote.description };
+      setDescription((current) => (current === saved.description ? remote.description : current));
+    }
+  }, [activeTask]);
 
   useEffect(() => {
     if (!activeTask) return;
@@ -62,6 +81,10 @@ export function TaskDetail() {
     const timer = setTimeout(() => {
       setSaveState('saving');
       void updateTask(activeTask.id, patch).then(() => {
+        lastSavedRef.current = {
+          title: patch.title ?? lastSavedRef.current.title,
+          description: patch.description ?? lastSavedRef.current.description,
+        };
         setSaveState('saved');
         window.setTimeout(() => setSaveState('idle'), 1400);
       });
@@ -72,11 +95,11 @@ export function TaskDetail() {
   if (!activeTask) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center bg-[var(--bg)] paper-grain">
-        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-[var(--line)] bg-[var(--surface-2)] text-[var(--faint)] shadow-soft">
+        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--surface-2)] text-[var(--faint)] shadow-soft">
           <FileText size={22} />
         </div>
-        <p className="text-sm font-medium">选择一条任务</p>
-        <p className="mt-1 text-xs text-[var(--faint)]">或者按 Ctrl+N 新建一条</p>
+        <p className="text-[15px] font-medium">选择一条任务</p>
+        <p className="mt-1 text-[12px] text-[var(--faint)]">或者按 Ctrl+N 新建一条</p>
       </div>
     );
   }
@@ -119,31 +142,30 @@ export function TaskDetail() {
       transition={{ duration: 0.18 }}
       className="thin-scroll flex min-w-0 flex-1 flex-col overflow-y-auto bg-[var(--bg)]"
     >
-      <div className="mx-auto flex w-full max-w-[760px] flex-1 flex-col px-10 py-8">
+      <div className="mx-auto flex w-full max-w-[760px] flex-1 flex-col px-12 py-8">
         <div className="mb-6 flex items-center gap-2">
           <button
             onClick={() => setListCollapsed(false)}
-            className="rounded-md px-2 py-1 text-[10px] text-[var(--faint)] transition hover:bg-[var(--hover)] hover:text-[var(--ink)] lg:hidden"
+            className="rounded-md px-2 py-1 text-[12px] text-[var(--faint)] transition hover:bg-[var(--hover)] hover:text-[var(--ink)] lg:hidden"
           >
             返回列表
           </button>
-          <div className="flex items-center gap-1.5 text-[10.5px] text-[var(--faint)]">
-            <Tag size={11} />
+          <div className="flex items-center gap-2 text-[12px] text-[var(--faint)]">
             <span>任务</span>
             <span>/</span>
             <span>{task.status === 'done' ? '已完成' : task.status === 'doing' ? '进行中' : '待办'}</span>
           </div>
           <span className="flex-1" />
           {saveState !== 'idle' ? (
-            <span className="text-[10px] text-[var(--faint)]">{saveState === 'saving' ? '保存中…' : '已保存'}</span>
+            <span className="text-[12px] text-[var(--faint)]">{saveState === 'saving' ? '保存中…' : '已保存'}</span>
           ) : null}
         </div>
 
-        <div className="flex items-start gap-3">
+        <div className="relative">
           <button
             onClick={() => void updateTask(task.id, { status: task.status === 'done' ? 'todo' : 'done' })}
             className={cn(
-              'mt-1.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-all',
+              'absolute -left-9 top-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-all',
               task.status === 'done'
                 ? 'border-[var(--accent)] bg-[var(--accent)] text-white'
                 : 'border-[var(--line-strong)] text-transparent hover:border-[var(--accent)]',
@@ -162,7 +184,7 @@ export function TaskDetail() {
               }
             }}
             className={cn(
-              'min-h-[42px] flex-1 resize-none bg-transparent font-serif text-[26px] font-semibold leading-tight tracking-[-0.02em] outline-none placeholder:text-[var(--faint)]',
+              'min-h-[42px] w-full resize-none bg-transparent font-serif text-[24px] font-semibold leading-tight tracking-[-0.02em] outline-none placeholder:text-[var(--faint)]',
               task.status === 'done' ? 'text-[var(--faint)] line-through' : 'text-[var(--ink)]',
             )}
             placeholder="任务标题"
@@ -173,7 +195,7 @@ export function TaskDetail() {
           value={description}
           onChange={(event) => setDescription(event.target.value)}
           placeholder="补充描述、上下文或下一步…"
-          className="mt-5 min-h-[90px] w-full resize-none rounded-xl border border-transparent bg-transparent px-3 py-2 font-serif text-[14px] leading-7 outline-none transition placeholder:text-[var(--faint)] hover:border-[var(--line)] focus:border-[var(--line)] focus:bg-[var(--surface)]"
+          className="-mx-3 mt-5 min-h-[90px] w-[calc(100%+24px)] resize-none rounded-xl border border-transparent bg-transparent px-3 py-2 font-serif text-[15px] leading-7 outline-none transition placeholder:text-[var(--faint)] hover:border-[var(--line)] focus:border-[var(--line)] focus:bg-[var(--surface)]"
         />
 
         <div className="mt-6 border-t border-[var(--line)]">
@@ -186,9 +208,9 @@ export function TaskDetail() {
             className="group flex w-full items-center gap-3 py-3 text-left"
           >
             <div className="flex min-w-0 flex-1 items-center gap-2">
-              <span className="truncate text-[11px] text-[var(--muted)]">{summary}</span>
+              <span className="truncate text-[12px] text-[var(--muted)]">{summary}</span>
             </div>
-            <span className="shrink-0 text-[10px] text-[var(--faint)]">{propertiesCollapsed ? '属性' : '收起'}</span>
+            <span className="shrink-0 text-[12px] text-[var(--faint)]">{propertiesCollapsed ? '属性' : '收起'}</span>
             <motion.span
               animate={{ rotate: propertiesCollapsed ? 0 : 180 }}
               transition={{ duration: 0.16 }}
@@ -208,9 +230,9 @@ export function TaskDetail() {
                 transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
                 className="overflow-hidden"
               >
-                <div className="grid grid-cols-[100px_1fr] gap-x-4 gap-y-5 pb-2 pt-2 text-[12px]">
-                  <span className="pt-1.5 text-[10.5px] uppercase tracking-[0.12em] text-[var(--faint)]">状态</span>
-                  <div className="flex flex-wrap gap-1.5">
+                <div className="grid grid-cols-[100px_1fr] gap-x-4 gap-y-5 pb-2 pt-2 text-[13px]">
+                  <span className="pt-2 text-[12px] uppercase tracking-[0.12em] text-[var(--faint)]">状态</span>
+                  <div className="flex flex-wrap gap-2">
                     {STATUS_META.map((meta) => {
                       const Icon = meta.icon;
                       return (
@@ -218,7 +240,7 @@ export function TaskDetail() {
                           key={meta.value}
                           onClick={() => void updateTask(task.id, { status: meta.value })}
                           className={cn(
-                            'inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] transition',
+                            'inline-flex h-7 items-center gap-2 rounded-lg border px-3 text-[12px] transition',
                             task.status === meta.value
                               ? 'border-[var(--accent)]/40 bg-[var(--accent-soft)] text-[var(--accent)]'
                               : 'border-[var(--line)] text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]',
@@ -231,14 +253,14 @@ export function TaskDetail() {
                     })}
                   </div>
 
-                  <span className="pt-1.5 text-[10.5px] uppercase tracking-[0.12em] text-[var(--faint)]">优先级</span>
-                  <div className="flex flex-wrap gap-1.5">
+                  <span className="pt-2 text-[12px] uppercase tracking-[0.12em] text-[var(--faint)]">优先级</span>
+                  <div className="flex flex-wrap gap-2">
                     {PRIORITY_META.map((meta) => (
                       <button
                         key={meta.value}
                         onClick={() => void updateTask(task.id, { priority: meta.value })}
                         className={cn(
-                          'inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] transition',
+                          'inline-flex h-7 items-center gap-2 rounded-lg border px-3 text-[12px] transition',
                           task.priority === meta.value
                             ? 'border-[var(--line-strong)] bg-[var(--surface-2)] text-[var(--ink)] shadow-sm'
                             : 'border-[var(--line)] text-[var(--muted)] hover:bg-[var(--hover)]',
@@ -250,22 +272,22 @@ export function TaskDetail() {
                     ))}
                   </div>
 
-                  <span className="flex items-center gap-1.5 pt-1.5 text-[10.5px] uppercase tracking-[0.12em] text-[var(--faint)]">
+                  <span className="flex items-center gap-2 pt-2 text-[12px] uppercase tracking-[0.12em] text-[var(--faint)]">
                     <CalendarClock size={11} /> 截止
                   </span>
                   <input
                     type="datetime-local"
                     value={toDateTimeInput(task.dueAt)}
                     onChange={(event) => void updateTask(task.id, { dueAt: fromDateTimeInput(event.target.value) })}
-                    className="h-8 w-fit rounded-lg border border-transparent bg-transparent px-2 text-[12px] text-[var(--ink)] outline-none transition hover:border-[var(--line)] focus:border-[var(--line)] focus:bg-[var(--surface-2)]"
+                    className="h-8 w-fit rounded-lg border border-transparent bg-transparent px-2 text-[13px] text-[var(--ink)] outline-none transition hover:border-[var(--line)] focus:border-[var(--line)] focus:bg-[var(--surface-2)]"
                   />
 
-                  <span className="flex items-center gap-1.5 pt-1.5 text-[10.5px] uppercase tracking-[0.12em] text-[var(--faint)]">
+                  <span className="flex items-center gap-2 pt-2 text-[12px] uppercase tracking-[0.12em] text-[var(--faint)]">
                     <Tag size={11} /> 标签
                   </span>
-                  <div className="flex flex-wrap items-center gap-1.5">
+                  <div className="flex flex-wrap items-center gap-2">
                     {task.tags.map((tag) => (
-                      <span key={tag} className="inline-flex h-6 items-center gap-1 rounded-md bg-[var(--surface-2)] px-2 text-[10.5px] text-[var(--muted)] ring-1 ring-[var(--line)]">
+                      <span key={tag} className="inline-flex h-6 items-center gap-1 rounded-md bg-[var(--surface-2)] px-2 text-[12px] text-[var(--muted)] ring-1 ring-[var(--line)]">
                         {tag}
                         <button onClick={() => void updateTask(task.id, { tags: task.tags.filter((item) => item !== tag) })} className="text-[var(--faint)] hover:text-red-500">
                           <X size={10} />
@@ -281,19 +303,19 @@ export function TaskDetail() {
                           if (event.key === 'Enter') void addTag();
                         }}
                         placeholder="加标签"
-                        className="w-16 bg-transparent text-[10.5px] outline-none placeholder:text-[var(--faint)]"
+                        className="w-16 bg-transparent text-[12px] outline-none placeholder:text-[var(--faint)]"
                       />
                     </div>
                   </div>
 
-                  <span className="flex items-center gap-1.5 pt-1.5 text-[10.5px] uppercase tracking-[0.12em] text-[var(--faint)]">
+                  <span className="flex items-center gap-2 pt-2 text-[12px] uppercase tracking-[0.12em] text-[var(--faint)]">
                     <Link2 size={11} /> 关联笔记
                   </span>
                   <div>
                     <select
                       value={task.noteId ?? ''}
                       onChange={(event) => void updateTask(task.id, { noteId: event.target.value || null })}
-                      className="h-8 max-w-[280px] rounded-lg border border-[var(--line)] bg-[var(--surface-2)] px-2 text-[11.5px] text-[var(--ink)] outline-none"
+                      className="h-8 max-w-[280px] rounded-lg border border-[var(--line)] bg-[var(--surface-2)] px-2 text-[12px] text-[var(--ink)] outline-none"
                     >
                       <option value="">未关联</option>
                       {notes.map((note) => (
@@ -302,7 +324,7 @@ export function TaskDetail() {
                         </option>
                       ))}
                     </select>
-                    {task.noteInTrash ? <p className="mt-1 text-[10px] text-amber-600">关联笔记在回收站</p> : null}
+                    {task.noteInTrash ? <p className="mt-1 text-[12px] text-amber-600">关联笔记在回收站</p> : null}
                   </div>
                 </div>
               </motion.div>
@@ -310,7 +332,7 @@ export function TaskDetail() {
           </AnimatePresence>
         </div>
         <div className="mt-10 flex items-center gap-2 border-t border-[var(--line)] pt-4">
-          <span className="text-[10px] text-[var(--faint)]">
+          <span className="text-[12px] text-[var(--faint)]">
             创建于 {new Date(task.createdAt).toLocaleString('zh-CN', { hour12: false })}
           </span>
           <span className="flex-1" />
@@ -324,9 +346,14 @@ export function TaskDetail() {
               </Button>
             </>
           ) : (
-            <Button variant="ghost" size="sm" className="text-[var(--muted)] hover:text-red-500" onClick={() => void deleteTask(task.id)}>
-              <Trash2 size={13} /> 移到回收站
-            </Button>
+            <button
+              onClick={() => void deleteTask(task.id)}
+              title="移到回收站"
+              aria-label="移到回收站"
+              className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--faint)] transition hover:bg-[var(--hover)] hover:text-red-500"
+            >
+              <Trash2 size={14} />
+            </button>
           )}
         </div>
       </div>

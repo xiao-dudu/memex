@@ -182,7 +182,7 @@ export function ReportDetail({ report }: ReportDetailProps) {
               {statusText ? (
                 <span
                   className={cn(
-                    'inline-flex items-center gap-1 text-[10.5px]',
+                    'inline-flex items-center gap-1 text-[12px]',
                     saveState === 'error' ? 'text-red-600' : saveState === 'saved' ? 'text-[var(--success)]' : 'text-[var(--faint)]',
                   )}
                 >
@@ -194,7 +194,7 @@ export function ReportDetail({ report }: ReportDetailProps) {
                 <button
                   onClick={() => setView('edit')}
                   className={cn(
-                    'flex h-7 items-center gap-1 rounded-md px-2 text-[10.5px] transition',
+                    'flex h-7 items-center gap-1 rounded-md px-2 text-[12px] transition',
                     view === 'edit' ? 'bg-[var(--surface-2)] text-[var(--ink)] shadow-sm' : 'text-[var(--muted)]',
                   )}
                 >
@@ -203,7 +203,7 @@ export function ReportDetail({ report }: ReportDetailProps) {
                 <button
                   onClick={() => setView('preview')}
                   className={cn(
-                    'flex h-7 items-center gap-1 rounded-md px-2 text-[10.5px] transition',
+                    'flex h-7 items-center gap-1 rounded-md px-2 text-[12px] transition',
                     view === 'preview' ? 'bg-[var(--surface-2)] text-[var(--ink)] shadow-sm' : 'text-[var(--muted)]',
                   )}
                 >
@@ -212,16 +212,16 @@ export function ReportDetail({ report }: ReportDetailProps) {
               </div>
             </div>
           </div>
-          <p className="mt-1 text-[11px] text-[var(--faint)]">
+          <p className="mt-1 text-[12px] text-[var(--faint)]">
             {formatPeriod(report)} · {report.template.name} · {report.tasks.length} 项任务 · {report.notes.length} 篇笔记
           </p>
-          <p className="mt-1 text-[10px] text-[var(--faint)]">
+          <p className="mt-1 text-[12px] text-[var(--faint)]">
             生成于 {formatDateTime(report.generationMeta.generatedAt)} · 模型 {report.generationMeta.model}
           </p>
-          {saveMessage ? <p className="mt-1 text-[10.5px] text-red-600">{saveMessage}</p> : null}
+          {saveMessage ? <p className="mt-1 text-[12px] text-red-600">{saveMessage}</p> : null}
         </header>
 
-        <div className="min-h-[480px] flex-1 rounded-2xl border border-[var(--line)] bg-[var(--surface)] shadow-soft">
+        <div className="min-h-[480px] flex-1 rounded-xl border border-[var(--line)] bg-[var(--surface)] shadow-soft">
           {view === 'edit' ? (
             <Textarea
               aria-label="Markdown 内容"
@@ -235,7 +235,7 @@ export function ReportDetail({ report }: ReportDetailProps) {
         </div>
 
         {notice ? (
-          <p className="mt-3 rounded-lg border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2 text-[10.5px] text-[var(--muted)]">
+          <p className="mt-3 rounded-lg border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2 text-[12px] text-[var(--muted)]">
             {notice}
           </p>
         ) : null}
@@ -255,7 +255,7 @@ export function ReportDetail({ report }: ReportDetailProps) {
           <span className="flex-1" />
           {deleteConfirm ? (
             <>
-              <span className="text-[10.5px] text-red-600">删除后不可恢复。</span>
+              <span className="text-[12px] text-red-600">删除后不可恢复。</span>
               <Button variant="ghost" size="sm" disabled={deleting} onClick={() => setDeleteConfirm(false)}>
                 取消
               </Button>

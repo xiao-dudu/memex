@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { ChevronRight, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Sidebar } from './components/layout/Sidebar';
 import { TitleBar } from './components/layout/TitleBar';
@@ -23,6 +23,8 @@ export default function App() {
     activeNote,
     settings,
     listCollapsed,
+    detailCollapsed,
+    setDetailCollapsed,
     bootstrap,
     refresh,
     selectTask,
@@ -67,8 +69,8 @@ export default function App() {
   }, [settings?.theme]);
 
   useEffect(() => {
-    if (module === 'notes' && !activeNote && notes[0]) void selectNote(notes[0].id);
-    if (module === 'tasks' && !activeTask && tasks[0]) selectTask(tasks[0].id);
+    if (module === 'notes' && !activeNote && notes[0]) void selectNote(notes[0].id, { preserveLayout: true });
+    if (module === 'tasks' && !activeTask && tasks[0]) selectTask(tasks[0].id, { preserveLayout: true });
   }, [module, notes, tasks, activeNote, activeTask, selectNote, selectTask]);
 
   useEffect(() => {
@@ -110,6 +112,7 @@ export default function App() {
         onSearch={() => setSearchOpen(true)}
         onSettings={() => setSettingsOpen(true)}
         onToggleSidebar={() => useAppStore.getState().setSidebarCollapsed(!useAppStore.getState().sidebarCollapsed)}
+        onToggleDetail={() => setDetailCollapsed(!detailCollapsed)}
       />
 
       <div className="flex min-h-0 flex-1">
@@ -123,7 +126,7 @@ export default function App() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -6 }}
               transition={{ duration: 0.16 }}
-              className="flex min-h-0"
+              className={detailCollapsed ? 'flex min-h-0 min-w-0 flex-1' : 'flex min-h-0'}
             >
               {module === 'tasks' ? <TaskList /> : module === 'notes' ? <NoteList /> : <ReportList />}
             </motion.div>
@@ -153,7 +156,23 @@ export default function App() {
           )}
         </AnimatePresence>
 
-        {module === 'tasks' ? <TaskDetail /> : module === 'notes' ? <NoteDetail /> : <ReportWorkspace />}
+        {detailCollapsed ? (
+          <div className="flex w-8 shrink-0 flex-col items-center border-l border-[var(--line)] bg-[var(--surface)] py-3">
+            <button
+              onClick={() => setDetailCollapsed(false)}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--faint)] transition hover:bg-[var(--hover)] hover:text-[var(--ink)]"
+              title="展开详情"
+            >
+              <ChevronLeft size={14} />
+            </button>
+          </div>
+        ) : module === 'tasks' ? (
+          <TaskDetail />
+        ) : module === 'notes' ? (
+          <NoteDetail />
+        ) : (
+          <ReportWorkspace />
+        )}
       </div>
 
       <SearchPalette />

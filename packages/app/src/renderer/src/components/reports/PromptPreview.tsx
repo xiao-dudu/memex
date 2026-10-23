@@ -8,12 +8,12 @@ export function PromptPreview({ template }: PromptPreviewProps) {
   return (
     <div className="space-y-3">
       <section className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-4">
-        <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-[var(--faint)]">系统固定规则（只读）</p>
-        <pre className="mt-2 whitespace-pre-wrap font-sans text-[11.5px] leading-6 text-[var(--muted)]">{REPORT_SYSTEM_RULES}</pre>
+        <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[var(--faint)]">系统固定规则（只读）</p>
+        <pre className="mt-2 whitespace-pre-wrap font-sans text-[12px] leading-6 text-[var(--muted)]">{REPORT_SYSTEM_RULES}</pre>
       </section>
       <section className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-4">
-        <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-[var(--faint)]">用户模板</p>
-        <div className="mt-2 space-y-2 text-[11.5px] leading-6 text-[var(--muted)]">
+        <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[var(--faint)]">用户模板</p>
+        <div className="mt-2 space-y-2 text-[12px] leading-6 text-[var(--muted)]">
           <p className="font-medium text-[var(--ink)]">{template.name}</p>
           <p>{template.description || '无说明'}</p>
           <p className="whitespace-pre-wrap">基础提示词：{template.basePrompt}</p>

@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light dark" />
+<title>正在开发中 · 敬请期待</title>
+<style>
+  :root {
+    --bg: #f2efe8;
+    --surface: #faf7f1;
+    --surface-2: #fffdf9;
+    --ink: #232019;
+    --muted: #7d766b;
+    --faint: #a49c90;
+    --line: #e1dbd0;
+    --line-strong: #cec6b8;
+    --accent: #b44724;
+    --accent-soft: #f3dfd5;
+    --shadow: 0 18px 50px rgba(52, 44, 32, 0.12);
+    --font-sans: "Segoe UI Variable", "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    --font-serif: "Iowan Old Style", "Palatino Linotype", "Songti SC", Georgia, "SimSun", serif;
+    --font-mono: "Cascadia Code", Consolas, "SF Mono", ui-monospace, monospace;
+
+    /* 插画固定配色：不随明暗主题反转，暗色下靠浅色底板承载 */
+    --fig-line: #232019;
+    --fig-fill: #fffdf9;
+    --fig-accent: #b44724;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151412;
+      --surface: #1c1a17;
+      --surface-2: #24211d;
+      --ink: #f1ece3;
+      --muted: #9a9388;
+      --faint: #6f685e;
+      --line: #302c26;
+      --line-strong: #443e35;
+      --accent: #df7850;
+      --accent-soft: #3a241c;
+      --shadow: 0 22px 60px rgba(0, 0, 0, 0.45);
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { min-height: 100%; }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    display: grid;
+    place-items: center;
+    padding: 40px 20px;
+    background-color: var(--bg);
+    background-image: radial-gradient(120% 90% at 50% 0%, rgba(255, 255, 255, 0.55), transparent 60%);
+    font-family: var(--font-sans);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    body { background-image: radial-gradient(120% 90% at 50% 0%, rgba(255, 240, 220, 0.05), transparent 60%); }
+  }
+
+  /* 纸张颗粒 */
+  .grain {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.05;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .grain { mix-blend-mode: screen; opacity: 0.035; }
+  }
+
+  .sheet {
+    position: relative;
+    width: min(500px, 100%);
+    padding: 32px 40px 30px;
+    text-align: center;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+  }
+
+  /* ---------- 顶部标签 ---------- */
+  .eyebrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    margin: 0 0 6px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  .eyebrow .mark {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  /* ---------- 插画版块 ---------- */
+  .plate {
+    position: relative;
+    width: min(268px, 64vw);
+    margin: 10px auto 4px;
+    aspect-ratio: 1;
+  }
+
+  .plate svg { display: block; width: 100%; height: 100%; overflow: visible; }
+
+  /* ---------- 文案 ---------- */
+  h1 {
+    margin: 6px 0 0;
+    font-family: var(--font-serif);
+    font-size: clamp(28px, 4.6vw, 35px);
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    line-height: 1.25;
+  }
+
+  .lede {
+    margin: 13px auto 0;
+    max-width: 24em;
+    font-size: 14.5px;
+    line-height: 1.85;
+    color: var(--muted);
+  }
+
+  /* ---------- 进度 / 页脚 ---------- */
+  .rule {
+    position: relative;
+    height: 1px;
+    margin: 26px 0 16px;
+    background: var(--line);
+    overflow: hidden;
+  }
+
+  .rule span {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 32%;
+    background: var(--accent);
+    animation: sweep 2.6s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  }
+
+  .foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .foot .dots { display: inline-flex; gap: 4px; }
+
+  .foot .dots i {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--faint);
+    animation: blink 1.6s ease-in-out infinite;
+  }
+
+  .foot .dots i:nth-child(2) { animation-delay: 0.2s; }
+  .foot .dots i:nth-child(3) { animation-delay: 0.4s; }
+
+  /* ---------- 动效 ---------- */
+  .bob { animation: bob 5s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+  .ring { animation: spin 60s linear infinite; transform-box: fill-box; transform-origin: center; }
+  .gear-slow { animation: spin 26s linear infinite; transform-box: fill-box; transform-origin: center; }
+  .gear-slow-rev { animation: spin 18s linear infinite reverse; transform-box: fill-box; transform-origin: center; }
+  .eyes { animation: eyes 6.4s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+
+  @keyframes bob {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-6px); }
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes eyes {
+    0%, 92%, 100% { transform: scaleY(1); }
+    95%           { transform: scaleY(0.08); }
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: 0.35; transform: scale(0.75); }
+  }
+  @keyframes sweep {
+    0%   { left: -34%; }
+    100% { left: 100%; }
+  }
+  @keyframes blink {
+    0%, 100% { opacity: 0.25; }
+    50%      { opacity: 1; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; }
+  }
+
+  @media (max-width: 480px) {
+    .sheet { padding: 26px 24px 24px; border-radius: 12px; }
+    .lede { font-size: 14px; }
+  }
+</style>
+</head>
+<body>
+  <div class="grain" aria-hidden="true"></div>
+
+  <main class="sheet">
+    <p class="eyebrow"><span class="mark"></span>In Progress</p>
+
+    <figure class="plate">
+      <svg viewBox="0 0 260 260" aria-hidden="true">
+        <defs>
+          <pattern id="halftone" width="7" height="7" patternUnits="userSpaceOnUse">
+            <circle cx="1.6" cy="1.6" r="1.1" fill="var(--fig-accent)" opacity="0.42" />
+          </pattern>
+        </defs>
+
+        <!-- 网点底盘 + 虚线刻度环 -->
+        <rect x="6" y="6" width="248" height="248" rx="22" fill="var(--fig-fill)" />
+
+        <circle cx="130" cy="92" r="76" fill="url(#halftone)" opacity="0.55" />
+        <circle class="ring" cx="130" cy="92" r="76" fill="none" stroke="var(--fig-accent)"
+                stroke-width="1" stroke-dasharray="3 10" opacity="0.5" />
+        <circle cx="130" cy="92" r="76" fill="none" stroke="var(--line-strong)" stroke-width="1" opacity="0.6" />
+
+        <!-- 角落注册标记 -->
+        <g stroke="var(--line-strong)" stroke-width="1" fill="none">
+          <path d="M14 26 L14 14 L26 14" />
+          <path d="M234 14 L246 14 L246 26" />
+          <path d="M246 234 L246 246 L234 246" />
+          <path d="M26 246 L14 246 L14 234" />
+        </g>
+
+        <!-- 背景齿轮 -->
+        <g class="gear-slow" opacity="0.55">
+          <g stroke="var(--fig-accent)" stroke-width="1.6" fill="none">
+            <circle cx="42" cy="70" r="13" />
+            <circle cx="42" cy="70" r="4.5" />
+            <path d="M42 52 V58 M42 82 V88 M24 70 H30 M54 70 H60" />
+            <path d="M29 57 L33 61 M51 79 L55 83 M55 57 L51 61 M33 79 L29 83" />
+          </g>
+        </g>
+        <g class="gear-slow-rev" opacity="0.5">
+          <g stroke="var(--fig-accent)" stroke-width="1.5" fill="none">
+            <circle cx="214" cy="188" r="10" />
+            <circle cx="214" cy="188" r="3.4" />
+            <path d="M214 174 V179 M214 197 V202 M200 188 H205 M223 188 H228" />
+          </g>
+        </g>
+
+        <!-- 地面 -->
+        <ellipse cx="130" cy="216" rx="46" ry="6.5" fill="var(--fig-line)" opacity="0.07" />
+
+        <g transform="translate(130 117) scale(1.1) translate(-130 -117)">
+        <g class="bob">
+          <!-- 腿 -->
+          <path d="M118 168 L118 200" stroke="var(--fig-line)" stroke-width="18" stroke-linecap="round" fill="none" />
+          <path d="M142 168 L142 200" stroke="var(--fig-line)" stroke-width="18" stroke-linecap="round" fill="none" />
+          <!-- 鞋 -->
+          <rect x="101" y="194" width="33" height="15" rx="7.5" fill="var(--fig-line)" />
+          <rect x="126" y="194" width="33" height="15" rx="7.5" fill="var(--fig-line)" />
+
+          <!-- 左手臂（下垂） -->
+          <path d="M110 118 Q96 132 94 150" stroke="var(--fig-line)" stroke-width="18" stroke-linecap="round" fill="none" />
+          <path d="M110 118 Q96 132 94 150" stroke="var(--fig-fill)" stroke-width="12" stroke-linecap="round" fill="none" />
+          <circle cx="93" cy="154" r="8.5" fill="var(--fig-fill)" stroke="var(--fig-line)" stroke-width="2.6" />
+
+          <!-- 躯干 -->
+          <path d="M108 116 Q108 108 116 108 L144 108 Q152 108 152 116 L152 168 Q152 176 144 176 L116 176 Q108 176 108 168 Z"
+                fill="var(--fig-line)" />
+          <rect x="111" y="106" width="9" height="20" rx="4" fill="var(--fig-fill)" opacity="0.9" />
+          <rect x="140" y="106" width="9" height="20" rx="4" fill="var(--fig-fill)" opacity="0.9" />
+          <path d="M124 108 L130 121 L136 108 Z" fill="var(--fig-fill)" opacity="0.9" />
+          <rect x="121" y="140" width="18" height="15" rx="4" fill="none" stroke="var(--fig-fill)" stroke-width="1.6" opacity="0.45" />
+
+          <!-- 右手臂（举起） -->
+          <path d="M150 116 Q182 106 194 80" stroke="var(--fig-line)" stroke-width="18" stroke-linecap="round" fill="none" />
+          <path d="M150 116 Q182 106 194 80" stroke="var(--fig-fill)" stroke-width="12" stroke-linecap="round" fill="none" />
+
+          <!-- 扳手 -->
+          <g transform="translate(198 70) rotate(-10)">
+            <rect x="-5.5" y="-2" width="11" height="46" rx="5.5" fill="var(--fig-fill)" stroke="var(--fig-line)" stroke-width="2.8" />
+            <path d="M0 -26 A16 16 0 1 0 0 6 A16 16 0 1 0 0 -26 Z M-5.5 -26 L-5.5 -10 L5.5 -10 L5.5 -26 Z"
+                  fill="var(--fig-fill)" stroke="var(--fig-line)" stroke-width="2.8" fill-rule="evenodd" />
+          </g>
+          <circle cx="196" cy="76" r="9" fill="var(--fig-fill)" stroke="var(--fig-line)" stroke-width="2.6" />
+
+          <!-- 头 -->
+          <circle cx="95" cy="78" r="7" fill="var(--fig-fill)" stroke="var(--fig-line)" stroke-width="2.6" />
+          <circle cx="165" cy="78" r="7" fill="var(--fig-fill)" stroke="var(--fig-line)" stroke-width="2.6" />
+          <circle cx="130" cy="74" r="36" fill="var(--fig-fill)" stroke="var(--fig-line)" stroke-width="2.8" />
+
+          <!-- 刘海 -->
+          <path d="M96 68 Q100 46 130 44 Q160 46 164 68 Q148 58 130 60 Q112 58 96 68 Z" fill="var(--fig-line)" />
+
+          <!-- 五官 -->
+          <g class="eyes">
+            <circle cx="118" cy="78" r="3.7" fill="var(--fig-line)" />
+            <circle cx="142" cy="78" r="3.7" fill="var(--fig-line)" />
+          </g>
+          <path d="M111 68 Q118 64 124 67" stroke="var(--fig-line)" stroke-width="2.4" stroke-linecap="round" fill="none" />
+          <path d="M136 67 Q142 64 149 68" stroke="var(--fig-line)" stroke-width="2.4" stroke-linecap="round" fill="none" />
+          <circle cx="107" cy="88" r="5.5" fill="var(--fig-accent)" opacity="0.2" />
+          <circle cx="153" cy="88" r="5.5" fill="var(--fig-accent)" opacity="0.2" />
+          <path d="M122 90 Q130 97 138 90" stroke="var(--fig-line)" stroke-width="2.6" stroke-linecap="round" fill="none" />
+
+          <!-- 安全帽 -->
+          <path d="M94 58 C94 36 110 25 130 25 C150 25 166 36 166 58 Z"
+                fill="var(--fig-accent)" stroke="var(--fig-line)" stroke-width="2.8" />
+          <rect x="86" y="55" width="88" height="11" rx="5.5" fill="var(--fig-accent)" stroke="var(--fig-line)" stroke-width="2.8" />
+          <rect x="126" y="23" width="8" height="13" rx="4" fill="var(--fig-fill)" opacity="0.55" />
+        </g>
+        </g>
+      </svg>
+    </figure>
+
+    <h1>正在开发中</h1>
+    <p class="lede">这个功能还在打磨，很快就会和你见面。</p>
+
+    <div class="rule" aria-hidden="true"><span></span></div>
+    <p class="foot"><span>敬请期待</span><span class="dots"><i></i><i></i><i></i></span></p>
+  </main>
+</body>
+</html>

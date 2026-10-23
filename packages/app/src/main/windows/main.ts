@@ -1,5 +1,10 @@
 import { BrowserWindow, shell } from 'electron';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+
+// 开发态没有 exe 内嵌图标，任务栏会退回 Electron 默认图标，这里手动指定。
+// 打包后 resources 不随包发布，existsSync 会返回 false，任务栏改用 exe 内嵌图标。
+const devIconPath = join(__dirname, '../../resources/icon.png');
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -16,6 +21,7 @@ export function createMainWindow(): BrowserWindow {
     show: false,
     backgroundColor: '#f4f1ea',
     title: 'Memex',
+    icon: existsSync(devIconPath) ? devIconPath : undefined,
     titleBarStyle: 'hidden',
     titleBarOverlay: {
       color: '#f4f1ea',

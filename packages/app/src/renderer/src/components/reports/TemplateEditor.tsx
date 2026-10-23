@@ -149,10 +149,10 @@ export function TemplateEditor({ template }: TemplateEditorProps) {
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-semibold tracking-tight">{template ? '编辑模板' : '新建模板'}</h1>
               {isBuiltin ? (
-                <span className="rounded bg-[var(--accent-soft)] px-1.5 py-0.5 text-[9px] text-[var(--accent)]">内置</span>
+                <span className="rounded-md bg-[var(--accent-soft)] px-1.5 py-0.5 text-[12px] text-[var(--accent)]">内置</span>
               ) : null}
             </div>
-            <p className="mt-1 text-xs text-[var(--faint)]">
+            <p className="mt-1 text-[12px] text-[var(--faint)]">
               {isBuiltin ? '内置模板不可直接修改' : '章节顺序会直接决定模型输出的结构。'}
             </p>
           </div>
@@ -178,25 +178,25 @@ export function TemplateEditor({ template }: TemplateEditorProps) {
         </header>
 
         <div className="space-y-4">
-          <section className="grid gap-4 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5 shadow-soft sm:grid-cols-2">
+          <section className="grid gap-4 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5 shadow-soft sm:grid-cols-2">
             <label className="space-y-1.5">
-              <span className="text-[10.5px] text-[var(--muted)]">模板名称</span>
+              <span className="text-[12px] text-[var(--muted)]">模板名称</span>
               <Input aria-label="模板名称" value={name} maxLength={200} disabled={isBuiltin} onChange={(event) => { setName(event.target.value); setSaved(false); }} />
             </label>
             <label className="space-y-1.5">
-              <span className="text-[10.5px] text-[var(--muted)]">模板说明</span>
+              <span className="text-[12px] text-[var(--muted)]">模板说明</span>
               <Input aria-label="模板说明" value={description} maxLength={1000} disabled={isBuiltin} onChange={(event) => { setDescription(event.target.value); setSaved(false); }} />
             </label>
             <label className="space-y-1.5 sm:col-span-2">
-              <span className="text-[10.5px] text-[var(--muted)]">基础提示词</span>
+              <span className="text-[12px] text-[var(--muted)]">基础提示词</span>
               <Textarea aria-label="基础提示词" value={basePrompt} rows={4} maxLength={20_000} disabled={isBuiltin} onChange={(event) => { setBasePrompt(event.target.value); setSaved(false); }} />
             </label>
           </section>
 
-          <section className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5 shadow-soft">
+          <section className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5 shadow-soft">
             <div className="mb-3 flex items-center gap-2">
               <h2 className="text-[13px] font-semibold">结构化章节</h2>
-              <span className="text-[10px] text-[var(--faint)]">{sections.length}/20</span>
+              <span className="text-[12px] text-[var(--faint)]">{sections.length}/20</span>
               <span className="flex-1" />
               <Button variant="ghost" size="sm" disabled={isBuiltin || sections.length >= 20} onClick={() => { setSections((current) => [...current, newSection()]); setSaved(false); }}>
                 <Plus size={13} /> 添加章节
@@ -207,15 +207,15 @@ export function TemplateEditor({ template }: TemplateEditorProps) {
               {sections.map((section, index) => (
                 <div key={section.id} className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-3">
                   <div className="flex items-center gap-2">
-                    <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--hover)] text-[10px] tabular-nums text-[var(--muted)]">{index + 1}</span>
+                    <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--hover)] text-[12px] tabular-nums text-[var(--muted)]">{index + 1}</span>
                     <Input aria-label="章节标题" value={section.title} maxLength={100} disabled={isBuiltin} onChange={(event) => updateSection(section.id, { title: event.target.value })} />
-                    <button type="button" disabled={isBuiltin || index === 0} onClick={() => moveSection(index, -1)} className="rounded p-1 text-[var(--faint)] hover:text-[var(--ink)] disabled:opacity-30" aria-label={`上移章节 ${index + 1}`}>
+                    <button type="button" disabled={isBuiltin || index === 0} onClick={() => moveSection(index, -1)} className="rounded-md p-1 text-[var(--faint)] hover:text-[var(--ink)] disabled:opacity-30" aria-label={`上移章节 ${index + 1}`}>
                       <ArrowUp size={13} />
                     </button>
-                    <button type="button" disabled={isBuiltin || index === sections.length - 1} onClick={() => moveSection(index, 1)} className="rounded p-1 text-[var(--faint)] hover:text-[var(--ink)] disabled:opacity-30" aria-label={`下移章节 ${index + 1}`}>
+                    <button type="button" disabled={isBuiltin || index === sections.length - 1} onClick={() => moveSection(index, 1)} className="rounded-md p-1 text-[var(--faint)] hover:text-[var(--ink)] disabled:opacity-30" aria-label={`下移章节 ${index + 1}`}>
                       <ArrowDown size={13} />
                     </button>
-                    <button type="button" disabled={isBuiltin || sections.length === 1} onClick={() => removeSection(section.id)} className="rounded p-1 text-[var(--faint)] hover:text-red-500 disabled:opacity-30" aria-label={`删除章节 ${index + 1}`}>
+                    <button type="button" disabled={isBuiltin || sections.length === 1} onClick={() => removeSection(section.id)} className="rounded-md p-1 text-[var(--faint)] hover:text-red-500 disabled:opacity-30" aria-label={`删除章节 ${index + 1}`}>
                       <Trash2 size={13} />
                     </button>
                   </div>
@@ -226,10 +226,10 @@ export function TemplateEditor({ template }: TemplateEditorProps) {
                     maxLength={5000}
                     disabled={isBuiltin}
                     onChange={(event) => updateSection(section.id, { instruction: event.target.value })}
-                    className="mt-2 text-[12px]"
+                    className="mt-2 text-[13px]"
                     placeholder="说明这一章节需要写什么"
                   />
-                  <label className="mt-2 flex w-fit items-center gap-2 text-[10.5px] text-[var(--muted)]">
+                  <label className="mt-2 flex w-fit items-center gap-2 text-[12px] text-[var(--muted)]">
                     <Checkbox disabled={isBuiltin} checked={section.allowEmpty} onChange={(checked) => updateSection(section.id, { allowEmpty: checked })} label={`允许章节 ${index + 1} 为空`} />
                     允许为空
                   </label>
@@ -238,24 +238,24 @@ export function TemplateEditor({ template }: TemplateEditorProps) {
             </div>
           </section>
 
-          <section className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5 shadow-soft">
+          <section className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5 shadow-soft">
             <label className="space-y-1.5">
-              <span className="text-[10.5px] text-[var(--muted)]">自定义约束与注意事项</span>
+              <span className="text-[12px] text-[var(--muted)]">自定义约束与注意事项</span>
               <Textarea aria-label="自定义约束" value={constraints} rows={3} maxLength={20_000} disabled={isBuiltin} onChange={(event) => { setConstraints(event.target.value); setSaved(false); }} />
             </label>
           </section>
 
           {showPreview ? <PromptPreview template={previewTemplate} /> : null}
 
-          {error ? <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700">{error}</p> : null}
-          {saved && !saving ? <p className="text-[10.5px] text-[var(--success)]">已保存</p> : null}
+          {error ? <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">{error}</p> : null}
+          {saved && !saving ? <p className="text-[12px] text-[var(--success)]">已保存</p> : null}
 
           {!isBuiltin && template ? (
             <footer className="flex items-center border-t border-[var(--line)] pt-4">
               <span className="flex-1" />
               {deleteConfirm ? (
                 <div className="flex items-center gap-2">
-                  <span className="text-[10.5px] text-red-600">删除模板不影响历史报告。</span>
+                  <span className="text-[12px] text-red-600">删除模板不影响历史报告。</span>
                   <Button variant="ghost" size="sm" disabled={saving} onClick={() => setDeleteConfirm(false)}>取消</Button>
                   <Button variant="danger" size="sm" disabled={saving} onClick={() => void remove()}>确认删除</Button>
                 </div>

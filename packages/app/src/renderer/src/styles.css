@@ -19,6 +19,30 @@
   --shadow-soft: 0 4px 18px rgba(52, 44, 32, 0.07);
   --font-sans: "Segoe UI Variable", "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
   --font-serif: "Iowan Old Style", "Palatino Linotype", "Songti SC", Georgia, serif;
+
+  /* 字号阶梯：5 档，禁止再出现 9.5/10.5/11.5 这类半像素字号 */
+  --text-caption: 12px;
+  --text-sm: 13px;
+  --text-body: 15px;
+  --text-title: 20px;
+  --text-display: 32px;
+
+  /* 间距：统一 4px 栅格 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* 圆角：3 档 */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* 三栏骨架：侧栏 / 列表 固定，详情自适应 */
+  --rail-sidebar: 240px;
+  --rail-list: 340px;
 }
 
 :root[data-theme="dark"] {

@@ -11,11 +11,11 @@ export function NoteDetail() {
   if (!activeNote) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center bg-[var(--bg)] paper-grain">
-        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-[var(--line)] bg-[var(--surface-2)] text-[var(--faint)] shadow-soft">
+        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--surface-2)] text-[var(--faint)] shadow-soft">
           <FileText size={22} />
         </div>
-        <p className="text-sm font-medium">选择一条笔记</p>
-        <p className="mt-1 text-xs text-[var(--faint)]">或者按 Ctrl+Shift+N 新建一条</p>
+        <p className="text-[15px] font-medium">选择一条笔记</p>
+        <p className="mt-1 text-[12px] text-[var(--faint)]">或者按 Ctrl+Shift+N 新建一条</p>
       </div>
     );
   }
@@ -31,10 +31,9 @@ export function NoteDetail() {
       transition={{ duration: 0.18 }}
       className="thin-scroll flex min-w-0 flex-1 flex-col overflow-y-auto bg-[var(--bg)]"
     >
-      <div className="mx-auto flex w-full max-w-[780px] flex-1 flex-col px-10 py-8">
+      <div className="mx-auto flex w-full max-w-[780px] flex-1 flex-col px-12 py-8">
         <div className="mb-7 flex items-center gap-2">
-          <div className="flex items-center gap-1.5 text-[10.5px] text-[var(--faint)]">
-            <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]/70" />
+          <div className="flex items-center gap-2 text-[12px] text-[var(--faint)]">
             <span>笔记</span>
             <span>/</span>
             <span>{new Date(note.updatedAt).toLocaleDateString('zh-CN')}</span>
@@ -44,7 +43,7 @@ export function NoteDetail() {
             <button
               onClick={() => void updateNote(note.id, { isPinned: !note.isPinned })}
               className={cn(
-                'flex h-7 items-center gap-1.5 rounded-md px-2 text-[10.5px] transition',
+                'flex h-7 items-center gap-2 rounded-md px-2 text-[12px] transition',
                 note.isPinned ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : 'text-[var(--faint)] hover:bg-[var(--hover)] hover:text-[var(--ink)]',
               )}
             >
@@ -58,10 +57,10 @@ export function NoteDetail() {
           {note.title}
         </h1>
 
-        <NoteEditor key={note.id} noteId={note.id} contentJson={note.contentJson} />
+        <NoteEditor key={note.id} noteId={note.id} title={note.title} contentJson={note.contentJson} />
 
         <div className="mt-10 flex items-center gap-2 border-t border-[var(--line)] pt-4">
-          <span className="text-[10px] text-[var(--faint)]">
+          <span className="text-[12px] text-[var(--faint)]">
             最后编辑 {new Date(note.updatedAt).toLocaleString('zh-CN', { hour12: false })}
           </span>
           <span className="flex-1" />

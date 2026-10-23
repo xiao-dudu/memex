@@ -8,11 +8,11 @@ import { TemplateEditor } from './TemplateEditor';
 function EmptyWorkspace() {
   return (
     <div className="flex flex-1 flex-col items-center justify-center bg-[var(--bg)] paper-grain px-8 text-center">
-      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-[var(--line)] bg-[var(--surface-2)] text-[var(--faint)] shadow-soft">
+      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--surface-2)] text-[var(--faint)] shadow-soft">
         <FileText size={22} />
       </div>
-      <p className="text-sm font-medium">选择一篇周报或创建新周报</p>
-      <p className="mt-1 max-w-sm text-xs leading-5 text-[var(--faint)]">
+      <p className="text-[15px] font-medium">选择一篇周报或创建新周报</p>
+      <p className="mt-1 max-w-sm text-[12px] leading-5 text-[var(--faint)]">
         周报会保存完整快照，后续修改任务、笔记或模板不会改变历史内容。
       </p>
     </div>

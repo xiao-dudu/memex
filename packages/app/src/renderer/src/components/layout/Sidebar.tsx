@@ -4,7 +4,6 @@ import {
   ChevronRight,
   Clock3,
   FileText,
-  Hash,
   Inbox,
   Layers,
   PanelLeftClose,
@@ -34,6 +33,18 @@ const NOTE_VIEWS: { view: NoteView; label: string; icon: typeof StickyNote; coun
   { view: 'trash', label: '回收站', icon: Trash2, countKey: 'trash' },
 ];
 
+const MODULES: { id: 'tasks' | 'notes' | 'reports'; label: string; icon: typeof Inbox }[] = [
+  { id: 'tasks', label: '任务', icon: CheckCircle2 },
+  { id: 'notes', label: '笔记', icon: StickyNote },
+  { id: 'reports', label: '周报', icon: FileText },
+];
+
+const CREATE_LABELS: Record<'tasks' | 'notes' | 'reports', string> = {
+  tasks: '新建任务',
+  notes: '新建笔记',
+  reports: '新建周报',
+};
+
 export function Sidebar() {
   const {
     module,
@@ -51,20 +62,23 @@ export function Sidebar() {
     setTaskTag,
     setNoteTag,
     setSidebarCollapsed,
-    setListCollapsed,
     setSettingsOpen,
     createTask,
     createNote,
   } = useAppStore();
   const startNewReport = useReportStore((state) => state.startNewReport);
 
-  const createCurrent = () => {
-    if (module === 'tasks') void createTask('未命名任务');
-    else if (module === 'notes') void createNote();
-    else {
-      startNewReport();
-      setListCollapsed(false);
+  const createIn = (target: 'tasks' | 'notes' | 'reports') => {
+    if (target === 'tasks') {
+      void createTask('未命名任务');
+      return;
     }
+    if (target === 'notes') {
+      void createNote();
+      return;
+    }
+    setModule('reports');
+    startNewReport();
   };
 
   if (sidebarCollapsed) {
@@ -113,71 +127,64 @@ export function Sidebar() {
   const views = module === 'tasks' ? TASK_VIEWS : NOTE_VIEWS;
 
   return (
-    <aside className="flex w-[232px] shrink-0 flex-col border-r border-[var(--line)] bg-[var(--sidebar)]">
-      <div className="flex items-center gap-1.5 px-3 pt-3">
-        <div className="flex flex-1 rounded-xl border border-[var(--line)] bg-[var(--bg)]/60 p-1">
-          <button
-            onClick={() => setModule('tasks')}
-            className={cn(
-              'flex h-7 flex-1 items-center justify-center gap-1 rounded-lg text-[11px] font-medium transition-all',
-              module === 'tasks' ? 'bg-[var(--surface-2)] text-[var(--ink)] shadow-sm' : 'text-[var(--muted)] hover:text-[var(--ink)]',
-            )}
-          >
-            <CheckCircle2 size={12} />
-            任务
-          </button>
-          <button
-            onClick={() => setModule('notes')}
-            className={cn(
-              'flex h-7 flex-1 items-center justify-center gap-1 rounded-lg text-[11px] font-medium transition-all',
-              module === 'notes' ? 'bg-[var(--surface-2)] text-[var(--ink)] shadow-sm' : 'text-[var(--muted)] hover:text-[var(--ink)]',
-            )}
-          >
-            <StickyNote size={12} />
-            笔记
-          </button>
-          <button
-            title="周报"
-            onClick={() => setModule('reports')}
-            className={cn(
-              'flex h-7 flex-1 items-center justify-center gap-1 rounded-lg text-[11px] font-medium transition-all',
-              module === 'reports' ? 'bg-[var(--surface-2)] text-[var(--ink)] shadow-sm' : 'text-[var(--muted)] hover:text-[var(--ink)]',
-            )}
-          >
-            <FileText size={12} />
-            周报
-          </button>
-        </div>
-        <button
-          onClick={createCurrent}
-          className="flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] shadow-sm transition hover:-translate-y-px hover:text-[var(--accent)]"
-          title={module === 'tasks' ? '新建任务' : module === 'notes' ? '新建笔记' : '新建周报'}
-        >
-          <Plus size={16} />
-        </button>
+    <aside className="flex w-[var(--rail-sidebar)] shrink-0 flex-col border-r border-[var(--line)] bg-[var(--sidebar)]">
+      <div className="flex flex-col gap-0.5 px-3 pt-3">
+        {MODULES.map((item) => {
+          const Icon = item.icon;
+          const active = module === item.id;
+          return (
+            <div
+              key={item.id}
+              className={cn(
+                'group relative flex h-8 items-center rounded-lg transition-colors',
+                active ? '' : 'hover:bg-[var(--hover)]',
+              )}
+            >
+              {active ? (
+                <span className="absolute left-0 top-2 h-4 w-[2px] rounded-full bg-[var(--accent)]" aria-hidden="true" />
+              ) : null}
+              <button
+                onClick={() => setModule(item.id)}
+                aria-current={active ? 'page' : undefined}
+                className={cn(
+                  'flex h-full flex-1 items-center gap-2 rounded-lg px-3 text-[13px] transition-colors',
+                  active ? 'font-medium text-[var(--ink)]' : 'text-[var(--muted)] group-hover:text-[var(--ink)]',
+                )}
+              >
+                <Icon size={14} className={active ? 'text-[var(--accent)]' : ''} />
+                <span className="flex-1 text-left">{item.label}</span>
+              </button>
+              <button
+                onClick={() => createIn(item.id)}
+                title={CREATE_LABELS[item.id]}
+                aria-label={CREATE_LABELS[item.id]}
+                className={cn(
+                  'mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--faint)] transition hover:bg-[var(--surface-2)] hover:text-[var(--accent)] focus-visible:opacity-100',
+                  active ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
+                )}
+              >
+                <Plus size={13} />
+              </button>
+            </div>
+          );
+        })}
       </div>
 
-      <nav className="thin-scroll mt-4 flex-1 overflow-y-auto px-2.5">
+      <nav className="thin-scroll mt-4 flex-1 overflow-y-auto px-3">
         {module === 'reports' ? (
           <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-3 shadow-sm">
-            <div className="flex items-center gap-2 text-[12px] font-medium text-[var(--ink)]">
+            <div className="flex items-center gap-2 text-[13px] font-medium text-[var(--ink)]">
               <FileText size={14} className="text-[var(--accent)]" />
               周报工作台
             </div>
-            <p className="mt-2 text-[10.5px] leading-5 text-[var(--faint)]">
+            <p className="mt-2 text-[12px] leading-5 text-[var(--faint)]">
               在中间列表切换报告与模板；报告保存生成时的完整快照。
             </p>
-            <button
-              onClick={startNewReport}
-              className="mt-3 flex h-7 w-full items-center justify-center gap-1.5 rounded-md bg-[var(--accent-soft)] text-[10.5px] font-medium text-[var(--accent)] transition hover:brightness-98"
-            >
-              <Plus size={12} /> 新建周报
-            </button>
           </div>
         ) : (
           <>
-            <div className="mb-1.5 flex items-center justify-between px-2">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--faint)]">视图</span>
+            <div className="mb-2 flex items-center justify-between px-3">
+              <span className="text-[12px] font-semibold uppercase tracking-[0.16em] text-[var(--faint)]">视图</span>
             </div>
             <div className="space-y-0.5">
               {views.map((item) => {
@@ -193,14 +200,14 @@ export function Sidebar() {
                     onClick={() => void (module === 'tasks' ? setTaskView(item.view as TaskView) : setNoteView(item.view as NoteView))}
                     whileTap={{ scale: 0.985 }}
                     className={cn(
-                      'group flex h-8 w-full items-center gap-2 rounded-lg px-2 text-[12.5px] transition-colors',
+                      'group flex h-8 w-full items-center gap-2 rounded-lg px-3 text-[13px] transition-colors',
                       active ? 'bg-[var(--surface-2)] font-medium text-[var(--ink)] shadow-sm' : 'text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]',
                     )}
                   >
                     <Icon size={14} className={active ? 'text-[var(--accent)]' : ''} />
                     <span className="flex-1 text-left">{item.label}</span>
                     {count > 0 ? (
-                      <span className={cn('min-w-5 rounded-md px-1.5 py-0.5 text-center text-[10px] tabular-nums', active ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : 'text-[var(--faint)]')}>
+                      <span className={cn('min-w-5 rounded-md px-1.5 py-0.5 text-center text-[12px] tabular-nums', active ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : 'text-[var(--faint)]')}>
                         {count}
                       </span>
                     ) : null}
@@ -209,20 +216,21 @@ export function Sidebar() {
               })}
             </div>
 
-            <div className="mb-1.5 mt-6 flex items-center gap-1.5 px-2">
-              <Hash size={11} className="text-[var(--faint)]" />
-              <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--faint)]">标签</span>
+            <div className="mb-2 mt-6 flex items-center gap-3 px-3">
+              <span className="text-[12px] font-semibold uppercase tracking-[0.16em] text-[var(--faint)]">标签</span>
             </div>
             <div className="space-y-0.5">
               {tags.length === 0 ? (
-                <p className="px-2 py-1 text-[11px] leading-5 text-[var(--faint)]">给任务或笔记加标签后，会出现在这里。</p>
+                <p className="px-3 py-1 text-[12px] leading-5 text-[var(--faint)]" title="给任务或笔记加标签后，会出现在这里。">
+                  还没有标签
+                </p>
               ) : (
                 tags.map((tag) => (
                   <button
                     key={tag.id}
                     onClick={() => (module === 'tasks' ? setTaskTag(tag.name) : setNoteTag(tag.name))}
                     className={cn(
-                      'flex h-8 w-full items-center gap-2 rounded-lg px-2 text-[12px] transition',
+                      'flex h-8 w-full items-center gap-2 rounded-lg px-2 text-[13px] transition',
                       (module === 'tasks' ? taskTag : noteTag) === tag.name
                         ? 'bg-[var(--surface-2)] font-medium text-[var(--ink)] shadow-sm'
                         : 'text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]',
@@ -230,7 +238,7 @@ export function Sidebar() {
                   >
                     <span className="h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} />
                     <span className="flex-1 truncate text-left">{tag.name}</span>
-                    <span className="text-[10px] tabular-nums text-[var(--faint)]">{(tag.taskCount ?? 0) + (tag.noteCount ?? 0)}</span>
+                    <span className="text-[12px] tabular-nums text-[var(--faint)]">{(tag.taskCount ?? 0) + (tag.noteCount ?? 0)}</span>
                   </button>
                 ))
               )}
@@ -239,11 +247,11 @@ export function Sidebar() {
         )}
       </nav>
 
-      <div className="border-t border-[var(--line)] p-2.5">
+      <div className="border-t border-[var(--line)] p-3">
         <div className="flex items-center gap-1">
           <button
             onClick={() => setSettingsOpen(true)}
-            className="flex h-8 flex-1 items-center gap-2 rounded-lg px-2 text-[12px] text-[var(--muted)] transition hover:bg-[var(--hover)] hover:text-[var(--ink)]"
+            className="flex h-8 flex-1 items-center gap-2 rounded-lg px-2 text-[13px] text-[var(--muted)] transition hover:bg-[var(--hover)] hover:text-[var(--ink)]"
           >
             <Settings2 size={14} />
             设置
@@ -256,7 +264,7 @@ export function Sidebar() {
             <PanelLeftClose size={15} />
           </button>
         </div>
-        <div className="mt-1 flex items-center gap-1.5 px-2 text-[10px] text-[var(--faint)]">
+        <div className="mt-1 flex items-center gap-2 px-2 text-[12px] text-[var(--faint)]">
           <Layers size={11} />
           <span>数据保存在本地</span>
         </div>

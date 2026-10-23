@@ -34,6 +34,7 @@ interface AppState {
   error: string | null;
   sidebarCollapsed: boolean;
   listCollapsed: boolean;
+  detailCollapsed: boolean;
   searchOpen: boolean;
   settingsOpen: boolean;
 
@@ -42,8 +43,8 @@ interface AppState {
   setTaskView: (view: TaskView) => void;
   setNoteView: (view: NoteView) => void;
   refresh: () => Promise<void>;
-  selectTask: (id: string | null) => void;
-  selectNote: (id: string | null) => Promise<void>;
+  selectTask: (id: string | null, options?: { preserveLayout?: boolean }) => void;
+  selectNote: (id: string | null, options?: { preserveLayout?: boolean }) => Promise<void>;
   openTask: (id: string) => Promise<void>;
   openNote: (id: string) => Promise<void>;
   setTaskTag: (tag: string | null) => void;
@@ -63,6 +64,7 @@ interface AppState {
   search: (query: string) => Promise<SearchResults>;
   setSidebarCollapsed: (collapsed: boolean) => void;
   setListCollapsed: (collapsed: boolean) => void;
+  setDetailCollapsed: (collapsed: boolean) => void;
   setSearchOpen: (open: boolean) => void;
   setSettingsOpen: (open: boolean) => void;
   updateSettings: (patch: Partial<MemexSettings>) => Promise<void>;
@@ -70,6 +72,34 @@ interface AppState {
 
 const EMPTY_TASK_COUNTS: TaskCounts = { inbox: 0, today: 0, upcoming: 0, done: 0, trash: 0 };
 const EMPTY_NOTE_COUNTS: NoteCounts = { all: 0, pinned: 0, trash: 0 };
+
+const LAYOUT_KEYS = {
+  sidebar: 'memex:layout-sidebar',
+  list: 'memex:layout-list',
+  detail: 'memex:layout-detail',
+} as const;
+
+function readLayout(key: string, fallback = false): boolean {
+  try {
+    const value = localStorage.getItem(key);
+    return value === null ? fallback : value === 'true';
+  } catch {
+    return fallback;
+  }
+}
+
+function writeLayout(key: string, value: boolean): void {
+  try {
+    localStorage.setItem(key, String(value));
+  } catch {
+    // 隐私模式或受限环境不该阻塞布局切换
+  }
+}
+
+const initialSidebarCollapsed = readLayout(LAYOUT_KEYS.sidebar);
+const initialDetailCollapsed = readLayout(LAYOUT_KEYS.detail);
+// 列表与详情同时折叠会剩两条空轨道，归一化：详情折叠时列表必定展开
+const initialListCollapsed = initialDetailCollapsed ? false : readLayout(LAYOUT_KEYS.list);
 
 export const useAppStore = create<AppState>((set, get) => ({
   module: 'tasks',
@@ -87,8 +117,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   settings: null,
   loading: true,
   error: null,
-  sidebarCollapsed: false,
-  listCollapsed: false,
+  sidebarCollapsed: initialSidebarCollapsed,
+  listCollapsed: initialListCollapsed,
+  detailCollapsed: initialDetailCollapsed,
   searchOpen: false,
   settingsOpen: false,
 
@@ -161,21 +192,25 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  selectTask(id) {
+  selectTask(id, options) {
     const task = get().tasks.find((item) => item.id === id) ?? null;
-    set({ activeTask: task, listCollapsed: false });
+    set(
+      options?.preserveLayout
+        ? { activeTask: task }
+        : { activeTask: task, listCollapsed: false, detailCollapsed: false },
+    );
   },
 
   async openTask(id) {
     const task = await window.memex.tasks.get(id);
     if (!task) return;
-    set({ module: 'tasks', activeTask: task, listCollapsed: false });
+    set({ module: 'tasks', activeTask: task, listCollapsed: false, detailCollapsed: false });
   },
 
   async openNote(id) {
     const note = await window.memex.notes.get(id);
     if (!note) return;
-    set({ module: 'notes', activeNote: note, listCollapsed: false });
+    set({ module: 'notes', activeNote: note, listCollapsed: false, detailCollapsed: false });
   },
 
   setTaskTag(tag) {
@@ -188,18 +223,22 @@ export const useAppStore = create<AppState>((set, get) => ({
     void get().refresh();
   },
 
-  async selectNote(id) {
+  async selectNote(id, options) {
     if (!id) {
       set({ activeNote: null });
       return;
     }
     const note = await window.memex.notes.get(id);
-    set({ activeNote: note });
+    set(
+      options?.preserveLayout
+        ? { activeNote: note }
+        : { activeNote: note, listCollapsed: false, detailCollapsed: false },
+    );
   },
 
   async createTask(title) {
     const task = await window.memex.tasks.create({ title });
-    set({ module: 'tasks', taskView: 'inbox', activeTask: task });
+    set({ module: 'tasks', taskView: 'inbox', activeTask: task, detailCollapsed: false });
     await get().refresh();
     set({ activeTask: task });
     return task;
@@ -237,7 +276,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   async createNote() {
     const note = await window.memex.notes.create({ contentJson: emptyDocument(), plainText: '' });
-    set({ module: 'notes', noteView: 'all', activeNote: note });
+    set({ module: 'notes', noteView: 'all', activeNote: note, detailCollapsed: false });
     await get().refresh();
     set({ activeNote: note });
     return note;
@@ -291,11 +330,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setSidebarCollapsed(collapsed) {
+    writeLayout(LAYOUT_KEYS.sidebar, collapsed);
     set({ sidebarCollapsed: collapsed });
   },
 
   setListCollapsed(collapsed) {
+    writeLayout(LAYOUT_KEYS.list, collapsed);
     set({ listCollapsed: collapsed });
+  },
+
+  setDetailCollapsed(collapsed) {
+    writeLayout(LAYOUT_KEYS.detail, collapsed);
+    set({ detailCollapsed: collapsed, ...(collapsed ? { listCollapsed: false } : {}) });
   },
 
   setSearchOpen(open) {

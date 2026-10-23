@@ -24,18 +24,33 @@ import { useAppStore } from '../../store/useAppStore';
 
 interface NoteEditorProps {
   noteId: string;
+  title: string;
   contentJson: string;
 }
 
-function parseDocument(contentJson: string): JSONContent {
+function parseDocument(contentJson: string, title: string): JSONContent {
   try {
-    return JSON.parse(contentJson) as JSONContent;
+    return stripLeadingTitle(JSON.parse(contentJson) as JSONContent, title);
   } catch {
     return { type: 'doc', content: [{ type: 'paragraph' }] };
   }
 }
 
-export function NoteEditor({ noteId, contentJson }: NoteEditorProps) {
+/**
+ * 页头已经展示了标题，正文若以一级标题重复同一句话，标题会出现两次。
+ * 这里只在渲染层去掉该节点：用户不编辑就不会写回数据库，编辑后自然归一。
+ */
+function stripLeadingTitle(doc: JSONContent, title: string): JSONContent {
+  const first = doc.content?.[0];
+  if (!first || first.type !== 'heading' || first.attrs?.level !== 1) return doc;
+  const text = (first.content ?? []).map((node) => node.text ?? '').join('').trim();
+  const heading = title.trim();
+  if (!heading || text !== heading) return doc;
+  const rest = (doc.content ?? []).slice(1);
+  return { ...doc, content: rest.length > 0 ? rest : [{ type: 'paragraph' }] };
+}
+
+export function NoteEditor({ noteId, title, contentJson }: NoteEditorProps) {
   const updateNote = useAppStore((state) => state.updateNote);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const timerRef = useRef<number | null>(null);
@@ -65,7 +80,7 @@ export function NoteEditor({ noteId, contentJson }: NoteEditorProps) {
       TaskList,
       TaskItem.configure({ nested: false }),
     ],
-    content: parseDocument(contentJson),
+    content: parseDocument(contentJson, title),
     onUpdate: ({ editor: current }) => {
       const document = current.getJSON();
       pendingRef.current = { contentJson: JSON.stringify(document), plainText: toPlainText(document) };
@@ -79,9 +94,9 @@ export function NoteEditor({ noteId, contentJson }: NoteEditorProps) {
   useEffect(() => {
     if (!editor || loadedNoteRef.current === noteId) return;
     loadedNoteRef.current = noteId;
-    editor.commands.setContent(parseDocument(contentJson), { emitUpdate: false });
+    editor.commands.setContent(parseDocument(contentJson, title), { emitUpdate: false });
     setSaveState('idle');
-  }, [editor, noteId, contentJson]);
+  }, [editor, noteId, title, contentJson]);
 
   useEffect(() => {
     return () => flush();
@@ -110,7 +125,7 @@ export function NoteEditor({ noteId, contentJson }: NoteEditorProps) {
 
   return (
     <div className="flex flex-col">
-      <div className="sticky top-0 z-10 -mx-1 mb-5 flex flex-wrap items-center gap-1 rounded-xl border border-[var(--line)] bg-[var(--surface)]/92 px-2 py-1.5 shadow-sm backdrop-blur">
+      <div className="sticky top-0 z-10 mb-5 flex flex-wrap items-center gap-1 rounded-xl border border-[var(--line)] bg-[var(--surface)]/92 px-2 py-1.5 shadow-sm backdrop-blur">
         {tools.map((tool) => {
           const Icon = tool.icon;
           return (
