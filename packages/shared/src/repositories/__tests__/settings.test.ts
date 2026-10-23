@@ -1,17 +1,24 @@
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { MemexDatabase } from '../../db/database.js';
 import { openDatabase } from '../../db/open.js';
 import { runMigrations } from '../../db/migrate.js';
 import { createSettingsRepository } from '../settings.js';
 
 let db: MemexDatabase;
+let dbDir: string;
 
 beforeEach(() => {
-  db = openDatabase(join(mkdtempSync(join(tmpdir(), 'memex-settings-')), 'test.db'));
+  dbDir = mkdtempSync(join(tmpdir(), 'memex-settings-'));
+  db = openDatabase(join(dbDir, 'test.db'));
   runMigrations(db);
+});
+
+afterEach(() => {
+  db.close();
+  rmSync(dbDir, { recursive: true, force: true });
 });
 
 describe('settings repository', () => {
@@ -21,14 +28,16 @@ describe('settings repository', () => {
 
   it('持久化并读回开启状态', () => {
     const repo = createSettingsRepository(db);
-    repo.update({ mcpTaskWrite: true });
+    const result = repo.update({ mcpTaskWrite: true });
+    expect(result.mcpTaskWrite).toBe(true);
     expect(repo.get().mcpTaskWrite).toBe(true);
   });
 
   it('关闭状态可被写回', () => {
     const repo = createSettingsRepository(db);
     repo.update({ mcpTaskWrite: true });
-    repo.update({ mcpTaskWrite: false });
+    const result = repo.update({ mcpTaskWrite: false });
+    expect(result.mcpTaskWrite).toBe(false);
     expect(repo.get().mcpTaskWrite).toBe(false);
   });
 
