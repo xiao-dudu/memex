@@ -18,6 +18,7 @@ docs/
 
 # scratch and test data
 work/
+.dev-data/
 *.db
 *.db-wal
 *.db-shm
@@ -35,3 +36,13 @@ test-results/
 
 # isolated worktrees
 .worktrees/
+
+# local-only agent skills (not tracked)
+.claude/skills/
+.agents/skills/
+.codeartsdoer/
+.grok/
+.minimax/
+.qoder/
+.windsurf/
+skills-lock.json
