@@ -2,8 +2,18 @@ import { createNoteRepository, createSearchRepository, createTaskRepository } fr
 import type { MemexDatabase, Note, NoteSummary, Task, TaskPatch, TaskPriority, TaskStatus } from '@memex/shared';
 import { McpToolError } from './errors.js';
 
+/**
+ * 兜底：due_at 可能是历史脏数据（超出 Date 可表示范围或为 NaN），
+ * 此时 toISOString() 会抛 RangeError。返回 null 而不是让整个 list_tasks /
+ * search_tasks 因为一行坏数据整体失败。
+ */
 function iso(value: number | null): string | null {
-  return value === null ? null : new Date(value).toISOString();
+  if (value === null) return null;
+  try {
+    return new Date(value).toISOString();
+  } catch {
+    return null;
+  }
 }
 
 export function serializeTask(task: Task) {
@@ -108,7 +118,7 @@ export function getTask(db: MemexDatabase, id: string) {
 export interface UpdateTaskArgs {
   id: string;
   title?: string;
-  description?: string;
+  description?: string | null;
   status?: TaskStatus;
   priority?: TaskPriority;
   dueAt?: string | number | null;

@@ -20,14 +20,17 @@ const statusSchema = z.enum(['todo', 'doing', 'done']);
 const prioritySchema = z.enum(['low', 'medium', 'high']);
 const limitSchema = z.number().int().min(1).max(100).default(20);
 const timeSchema = z.union([z.string().min(1), z.number().int()]);
+// Date 只能表示 ±8.64e15 ms，超出后 toISOString() 会抛 RangeError，
+// 导致 serializeTask 失败、list_tasks 整体崩溃，所以入库前就把 dueAt 收敛到同一区间。
+const dueAtMillisSchema = z.number().int().min(-8640000000000000).max(8640000000000000);
 
 const updateTaskSchema = z.object({
   id: z.string().min(1),
   status: statusSchema.optional(),
   priority: prioritySchema.optional(),
-  dueAt: z.union([z.string().min(1), z.number().int(), z.null()]).optional(),
+  dueAt: z.union([z.string().min(1), dueAtMillisSchema, z.null()]).optional(),
   title: z.string().min(1).optional(),
-  description: z.string().optional(),
+  description: z.union([z.string(), z.null()]).optional(),
   tags: z.array(z.string().min(1).max(40)).optional(),
 });
 
@@ -145,12 +148,22 @@ const TASK_WRITE_TOOLS = [
         dueAt: {
           anyOf: [
             { type: 'string', description: 'ISO 8601 日期字符串' },
-            { type: 'number', description: '毫秒时间戳' },
+            {
+              type: 'number',
+              minimum: -8640000000000000,
+              maximum: 8640000000000000,
+              description: '毫秒时间戳（Date 可表示范围内）',
+            },
             { type: 'null', description: '清除截止时间' },
           ],
         },
         title: { type: 'string', description: '任务标题' },
-        description: { type: 'string', description: '任务描述' },
+        description: {
+          anyOf: [
+            { type: 'string', description: '任务描述' },
+            { type: 'null', description: '清空描述' },
+          ],
+        },
         tags: { type: 'array', items: { type: 'string' }, description: '标签列表' },
       },
       required: ['id'],

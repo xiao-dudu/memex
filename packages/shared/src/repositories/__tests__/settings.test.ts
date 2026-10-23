@@ -42,6 +42,8 @@ describe('settings repository', () => {
   });
 
   it('settings 键损坏时保留默认值', () => {
+    // 必须走裸 SQL：repo.update() 会把值 JSON.stringify 成合法 JSON，写不出"损坏"的 value；
+    // 而 migrate.ts 已经 seed 了 mcp_task_write 这一行，所以用 INSERT OR REPLACE 覆盖它。
     db.prepare("INSERT OR REPLACE INTO settings(key, value) VALUES ('mcp_task_write', 'not-json')").run();
     expect(createSettingsRepository(db).get().mcpTaskWrite).toBe(false);
   });

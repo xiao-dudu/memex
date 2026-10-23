@@ -219,4 +219,67 @@ describe('update_task tool', () => {
     await client.close();
     await server.close();
   });
+
+  it('dueAt 可传毫秒时间戳', async () => {
+    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'mcp_task_write'").run();
+    const { server, client } = await connect();
+    const dueAt = Date.UTC(2030, 0, 1);
+    const updated = await client.callTool({ name: 'update_task', arguments: { id: taskId, dueAt } });
+    const payload = JSON.parse(textOf(updated)) as { task: { dueAt: string }; changes: string[] };
+    expect(payload.task.dueAt).toBe('2030-01-01T00:00:00.000Z');
+    expect(payload.changes).toEqual(['dueAt']);
+    await client.close();
+    await server.close();
+  });
+
+  it('dueAt 超出 Date 可表示范围时被拒绝，且不写入数据库', async () => {
+    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'mcp_task_write'").run();
+    const { server, client } = await connect();
+    const before = db.prepare('SELECT updated_at, due_at FROM tasks WHERE id = ?').get(taskId) as { updated_at: number; due_at: number | null };
+
+    const rejected = await client.callTool({ name: 'update_task', arguments: { id: taskId, dueAt: 9007199254740991 } });
+    expect(rejected.isError).toBe(true);
+    expect(textOf(rejected)).toContain('INVALID_ARGUMENT');
+
+    // 拒绝必须发生在写入之前：updated_at / due_at 都没被动过。
+    const after = db.prepare('SELECT updated_at, due_at FROM tasks WHERE id = ?').get(taskId) as { updated_at: number; due_at: number | null };
+    expect(after.updated_at).toBe(before.updated_at);
+    expect(after.due_at).toBe(before.due_at);
+
+    // 没有被毒化的行，list_tasks 照常工作。
+    const listed = await client.callTool({ name: 'list_tasks', arguments: { limit: 20 } });
+    expect(listed.isError).toBeFalsy();
+    const tasks = JSON.parse(textOf(listed)) as { id: string; dueAt: string | null }[];
+    expect(tasks.find((task) => task.id === taskId)?.dueAt).toBeNull();
+    await client.close();
+    await server.close();
+  });
+
+  it('due_at 已损坏的历史数据不会让 list_tasks 整体失败', async () => {
+    const { server, client } = await connect();
+    db.prepare('UPDATE tasks SET due_at = ? WHERE id = ?').run(9007199254740991, taskId);
+
+    const listed = await client.callTool({ name: 'list_tasks', arguments: { limit: 20 } });
+    expect(listed.isError).toBeFalsy();
+    const tasks = JSON.parse(textOf(listed)) as { id: string; dueAt: string | null }[];
+    expect(tasks.find((task) => task.id === taskId)?.dueAt).toBeNull();
+
+    await client.close();
+    await server.close();
+  });
+
+  it('description 可传 null 清空描述', async () => {
+    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'mcp_task_write'").run();
+    db.prepare('UPDATE tasks SET description = ? WHERE id = ?').run('待补充范围', taskId);
+    const { server, client } = await connect();
+    const updated = await client.callTool({ name: 'update_task', arguments: { id: taskId, description: null } });
+    const payload = JSON.parse(textOf(updated)) as { task: { description: string | null }; changes: string[] };
+    expect(payload.task.description).toBeNull();
+    expect(payload.changes).toEqual(['description']);
+
+    const reread = JSON.parse(textOf(await client.callTool({ name: 'get_task', arguments: { id: taskId } }))) as { description: string | null };
+    expect(reread.description).toBeNull();
+    await client.close();
+    await server.close();
+  });
 });

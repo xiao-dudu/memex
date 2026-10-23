@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { ChevronRight, Plus } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Sidebar } from './components/layout/Sidebar';
@@ -24,6 +24,7 @@ export default function App() {
     settings,
     listCollapsed,
     bootstrap,
+    refresh,
     selectTask,
     selectNote,
     setListCollapsed,
@@ -39,6 +40,25 @@ export default function App() {
   useEffect(() => {
     void bootstrap();
   }, [bootstrap]);
+
+  // MCP 客户端在外部写库后界面不会自动更新，窗口重新获得焦点时补一次读取。
+  // refresh() 会整份覆盖 tasks/notes，所以用 ref 挡住连点导致的并发覆盖。
+  const refreshing = useRef(false);
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible' || refreshing.current) return;
+      refreshing.current = true;
+      void refresh().finally(() => {
+        refreshing.current = false;
+      });
+    };
+    window.addEventListener('focus', onVisible);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('focus', onVisible);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [refresh]);
 
   useEffect(() => {
     const theme = settings?.theme ?? 'system';
