@@ -22,6 +22,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -56,13 +57,38 @@ jobs:
           path: release/**
           if-no-files-found: warn
 
+      - name: Build changelog
+        id: changelog
+        shell: bash
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          PREV=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
+          if [ -z "$PREV" ]; then
+            RANGE="$TAG"
+            COMPARE=""
+          else
+            RANGE="${PREV}..${TAG}"
+            COMPARE="完整变更：https://github.com/${{ github.repository }}/compare/${PREV}...${TAG}"
+          fi
+          {
+            echo "body<<CHANGELOG_EOF"
+            git log "$RANGE" --no-merges --pretty=format:'%s' \
+              | grep -vE '^chore\(release\):' \
+              | sed -E 's/^[a-z]+(\([^)]*\))?: //' \
+              | sed -E 's/^/- /' || true
+            echo ""
+            echo ""
+            echo "$COMPARE"
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Publish release assets
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           name: Memex ${{ github.event.inputs.tag || github.ref_name }}
-          # 应用内的更新弹窗展示的是 release body，没有正文等于没有「更新内容」
-          generate_release_notes: true
+          # 应用内的更新弹窗展示的是 release body，正文由上一步从提交生成
+          body: ${{ steps.changelog.outputs.body }}
           fail_on_unmatched_files: true
           files: |
             release/Memex-Setup-*.exe
