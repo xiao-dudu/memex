@@ -4,8 +4,8 @@ import {
   ChevronRight,
   Clock3,
   FileText,
-  Inbox,
   Layers,
+  ListTodo,
   PanelLeftClose,
   Pin,
   Plus,
@@ -19,8 +19,8 @@ import { useAppStore } from '../../store/useAppStore';
 import { useReportStore } from '../../store/useReportStore';
 import { cn } from '../ui/utils';
 
-const TASK_VIEWS: { view: TaskView; label: string; icon: typeof Inbox; countKey: 'inbox' | 'today' | 'upcoming' | 'done' | 'trash' }[] = [
-  { view: 'inbox', label: '收件箱', icon: Inbox, countKey: 'inbox' },
+const TASK_VIEWS: { view: TaskView; label: string; icon: typeof ListTodo; countKey: 'inbox' | 'today' | 'upcoming' | 'done' | 'trash' }[] = [
+  { view: 'inbox', label: '全部任务', icon: ListTodo, countKey: 'inbox' },
   { view: 'today', label: '今天', icon: CalendarDays, countKey: 'today' },
   { view: 'upcoming', label: '即将到期', icon: Clock3, countKey: 'upcoming' },
   { view: 'done', label: '已完成', icon: CheckCircle2, countKey: 'done' },
@@ -33,7 +33,7 @@ const NOTE_VIEWS: { view: NoteView; label: string; icon: typeof StickyNote; coun
   { view: 'trash', label: '回收站', icon: Trash2, countKey: 'trash' },
 ];
 
-const MODULES: { id: 'tasks' | 'notes' | 'reports'; label: string; icon: typeof Inbox }[] = [
+const MODULES: { id: 'tasks' | 'notes' | 'reports'; label: string; icon: typeof ListTodo }[] = [
   { id: 'tasks', label: '任务', icon: CheckCircle2 },
   { id: 'notes', label: '笔记', icon: StickyNote },
   { id: 'reports', label: '周报', icon: FileText },

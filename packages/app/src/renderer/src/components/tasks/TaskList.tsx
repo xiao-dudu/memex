@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { CalendarClock, ChevronsDownUp, Inbox, Plus, SearchX } from 'lucide-react';
+import { CalendarClock, ChevronsDownUp, ListTodo, Plus, SearchX } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { Task, TaskStatus, TaskView } from '@memex/shared';
 import { useAppStore } from '../../store/useAppStore';
@@ -9,7 +9,7 @@ import { cn } from '../ui/utils';
 import { formatShortDate, isOverdue } from '../../lib/date';
 
 const VIEW_TITLES: Record<TaskView, string> = {
-  inbox: '收件箱',
+  inbox: '全部任务',
   today: '今天',
   upcoming: '即将到期',
   done: '已完成',
@@ -143,9 +143,9 @@ export function TaskList() {
         ) : visibleTasks.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center px-8 text-center">
             <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--surface-2)] text-[var(--faint)] shadow-sm">
-              {taskView === 'inbox' ? <Inbox size={20} /> : <SearchX size={20} />}
+              {taskView === 'inbox' ? <ListTodo size={20} /> : <SearchX size={20} />}
             </div>
-            <p className="text-[13px] font-medium">{taskView === 'inbox' ? '收件箱是空的' : '这里还没有内容'}</p>
+            <p className="text-[13px] font-medium">{taskView === 'inbox' ? '还没有任务' : '这里还没有内容'}</p>
             <p className="mt-1 text-[12px] leading-5 text-[var(--faint)]">
               {taskView === 'trash' ? '删除的任务会在这里保留 30 天。' : '在上方输入框写下第一件事。'}
             </p>
