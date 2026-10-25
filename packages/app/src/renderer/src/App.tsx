@@ -15,7 +15,7 @@ import { SettingsDialog } from './components/settings/SettingsDialog';
 import { useAppStore } from './store/useAppStore';
 import { useReportStore } from './store/useReportStore';
 
-const SPLASH_MIN_DURATION = 1150;
+const SPLASH_MIN_DURATION = 2550;
 
 export default function App() {
   const {

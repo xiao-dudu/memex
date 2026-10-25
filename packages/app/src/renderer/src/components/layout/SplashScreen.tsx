@@ -19,14 +19,14 @@ export function SplashScreen() {
         style={{ backgroundColor: '#232019' }}
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+        transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
       >
         <motion.span
           className="text-[42px] leading-none"
           style={{ fontFamily: 'var(--font-serif)', color: '#F7F2E7', fontWeight: 700, letterSpacing: '-1px' }}
           initial={{ clipPath: 'inset(0 100% 0 0)' }}
           animate={{ clipPath: 'inset(0 0% 0 0)' }}
-          transition={{ delay: 0.14, duration: 0.42, ease: [0.4, 0, 0.2, 1] }}
+          transition={{ delay: 0.18, duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
         >
           M
         </motion.span>
@@ -35,7 +35,7 @@ export function SplashScreen() {
           style={{ backgroundColor: '#B44724', top: 14, right: 14 }}
           initial={{ scale: 0 }}
           animate={{ scale: [0, 1.18, 1] }}
-          transition={{ delay: 0.3, duration: 0.26, times: [0, 0.6, 1], ease: 'easeOut' }}
+          transition={{ delay: 0.38, duration: 0.3, times: [0, 0.6, 1], ease: 'easeOut' }}
         />
       </motion.div>
 
@@ -44,18 +44,18 @@ export function SplashScreen() {
         style={{ fontFamily: 'var(--font-serif)', color: 'var(--muted)' }}
         initial={{ opacity: 0, letterSpacing: '0.34em' }}
         animate={{ opacity: 1, letterSpacing: '0.16em' }}
-        transition={{ delay: 0.5, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+        transition={{ delay: 0.62, duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
       >
         Memex
       </motion.p>
 
       <div className="mt-4 h-px w-[104px] overflow-hidden bg-[var(--line)]">
         <motion.div
-          className="h-full w-full"
-          style={{ backgroundColor: '#B44724', transformOrigin: 'left' }}
-          initial={{ scaleX: 0 }}
-          animate={{ scaleX: 1 }}
-          transition={{ delay: 0.55, duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+          className="h-full w-[40%]"
+          style={{ backgroundColor: '#B44724' }}
+          initial={{ x: '-100%' }}
+          animate={{ x: '250%' }}
+          transition={{ delay: 0.55, duration: 0.667, repeat: Infinity, ease: 'easeInOut' }}
         />
       </div>
     </motion.div>
