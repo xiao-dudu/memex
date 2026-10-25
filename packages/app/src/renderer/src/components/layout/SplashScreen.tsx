@@ -51,11 +51,11 @@ export function SplashScreen() {
 
       <div className="mt-4 h-px w-[104px] overflow-hidden bg-[var(--line)]">
         <motion.div
-          className="h-full w-[40%]"
+          className="h-full w-[36%]"
           style={{ backgroundColor: '#B44724' }}
           initial={{ x: '-100%' }}
-          animate={{ x: '250%' }}
-          transition={{ delay: 0.55, duration: 0.667, repeat: Infinity, ease: 'easeInOut' }}
+          animate={{ x: '278%' }}
+          transition={{ delay: 0.55, duration: 1.05, repeat: Infinity, ease: 'easeInOut' }}
         />
       </div>
     </motion.div>
