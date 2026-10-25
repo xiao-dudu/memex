@@ -302,7 +302,7 @@ export function DatePicker({
                     key={preset.label}
                     type="button"
                     onClick={preset.run}
-                    className="h-6 rounded-md bg-[var(--hover)] px-2 text-[12px] text-[var(--muted)] transition hover:bg-[var(--accent-soft)] hover:text-[var(--accent)]"
+                    className="h-6 rounded-md px-1.5 text-[12px] text-[var(--muted)] transition hover:bg-[var(--accent-soft)] hover:text-[var(--accent)]"
                   >
                     {preset.label}
                   </button>
@@ -314,7 +314,7 @@ export function DatePicker({
                       onChange(null);
                       closePanel();
                     }}
-                    className="ml-auto h-6 rounded-md px-2 text-[12px] text-[var(--faint)] transition hover:text-red-500"
+                    className="ml-auto h-6 rounded-md px-1.5 text-[12px] text-[var(--faint)] transition hover:bg-[var(--hover)] hover:text-red-500"
                   >
                     清除
                   </button>
