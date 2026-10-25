@@ -12,6 +12,19 @@ export function ensureTag(db: MemexDatabase, rawName: string): string {
   return id;
 }
 
+/**
+ * 清掉没有任何任务或笔记引用的标签。
+ * 标签是「用着才有意义」的数据：打错字、或把最后一条引用去掉之后，
+ * tags 表里的行不会自动消失，会一直挂在侧栏上。这里在写入路径上顺手回收。
+ */
+export function pruneOrphanTags(db: MemexDatabase): void {
+  db.prepare(`
+    DELETE FROM tags
+    WHERE id NOT IN (SELECT tag_id FROM task_tags)
+      AND id NOT IN (SELECT tag_id FROM note_tags)
+  `).run();
+}
+
 export function setEntityTags(
   db: MemexDatabase,
   entity: 'task' | 'note',
@@ -30,6 +43,7 @@ export function setEntityTags(
     }
   });
   apply();
+  pruneOrphanTags(db);
 }
 
 export function getEntityTags(db: MemexDatabase, entity: 'task' | 'note', ids: string[]): Map<string, string[]> {

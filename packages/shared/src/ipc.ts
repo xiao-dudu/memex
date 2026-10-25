@@ -52,6 +52,7 @@ export interface MemexApi {
   };
   tags: {
     list(): Promise<Tag[]>;
+    remove(id: string): Promise<void>;
   };
   search(query: string, limit?: number): Promise<SearchResults>;
   settings: {
@@ -118,6 +119,7 @@ export const IPC = {
   notesPurge: 'notes:purge',
   notesCounts: 'notes:counts',
   tagsList: 'tags:list',
+  tagsRemove: 'tags:remove',
   search: 'search:query',
   settingsGet: 'settings:get',
   settingsUpdate: 'settings:update',

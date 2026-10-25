@@ -94,6 +94,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.notesCounts, () => getRepositories().notes.counts());
 
   ipcMain.handle(IPC.tagsList, () => getRepositories().tags.list());
+  ipcMain.handle(IPC.tagsRemove, (_event, id) => getRepositories().tags.remove(idSchema(id)));
 
   ipcMain.handle(IPC.search, (_event, query, limit) => {
     const parsed = searchQuerySchema.parse({ query, limit });

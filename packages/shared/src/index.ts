@@ -10,7 +10,7 @@ export { createTaskRepository } from './repositories/tasks.js';
 export type { TaskRepository } from './repositories/tasks.js';
 export { createNoteRepository } from './repositories/notes.js';
 export type { NoteRepository } from './repositories/notes.js';
-export { createTagRepository } from './repositories/tags.js';
+export { createTagRepository, pruneOrphanTags } from './repositories/tags.js';
 export type { TagRepository } from './repositories/tags.js';
 export { createSearchRepository } from './repositories/search.js';
 export type { SearchRepository } from './repositories/search.js';

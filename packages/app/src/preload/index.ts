@@ -24,6 +24,7 @@ const api: MemexApi = {
   },
   tags: {
     list: () => ipcRenderer.invoke(IPC.tagsList),
+    remove: (id) => ipcRenderer.invoke(IPC.tagsRemove, id),
   },
   search: (query, limit) => ipcRenderer.invoke(IPC.search, query, limit),
   settings: {

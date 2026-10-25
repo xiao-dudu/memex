@@ -9,6 +9,7 @@ import {
   createTagRepository,
   createTaskRepository,
   openDatabase,
+  pruneOrphanTags,
   runMigrations,
   type MemexDatabase,
 } from '@memex/shared';
@@ -59,6 +60,8 @@ function purgeExpiredTrash(db: MemexDatabase): void {
   const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
   db.prepare('DELETE FROM tasks WHERE deleted_at IS NOT NULL AND deleted_at < ?').run(cutoff);
   db.prepare('DELETE FROM notes WHERE deleted_at IS NOT NULL AND deleted_at < ?').run(cutoff);
+  // 上面两条会级联删掉关联表，可能留下没人引用的标签，一并清掉
+  pruneOrphanTags(db);
 }
 
 export function getDb(): MemexDatabase {

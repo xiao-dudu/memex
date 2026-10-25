@@ -12,12 +12,15 @@ import {
   Settings2,
   StickyNote,
   Trash2,
+  X,
 } from 'lucide-react';
+import { useState } from 'react';
 import { motion } from 'motion/react';
-import type { NoteView, TaskView } from '@memex/shared';
+import type { NoteView, Tag, TaskView } from '@memex/shared';
 import { useAppStore } from '../../store/useAppStore';
 import { useReportStore } from '../../store/useReportStore';
 import { cn } from '../ui/utils';
+import { ConfirmDialog } from '../ui/confirm-dialog';
 
 const TASK_VIEWS: { view: TaskView; label: string; icon: typeof ListTodo; countKey: 'inbox' | 'today' | 'upcoming' | 'done' | 'trash' }[] = [
   { view: 'inbox', label: '全部任务', icon: ListTodo, countKey: 'inbox' },
@@ -67,6 +70,19 @@ export function Sidebar() {
     createNote,
   } = useAppStore();
   const startNewReport = useReportStore((state) => state.startNewReport);
+  const refresh = useAppStore((state) => state.refresh);
+  const [tagToDelete, setTagToDelete] = useState<Tag | null>(null);
+
+  const confirmDeleteTag = async () => {
+    const target = tagToDelete;
+    if (!target) return;
+    setTagToDelete(null);
+    await window.memex.tags.remove(target.id);
+    // 删掉的正好是当前筛选条件时，把过滤一起撤掉，否则列表会空着且无法恢复
+    if (module === 'tasks' && taskTag === target.name) setTaskTag(null);
+    if (module === 'notes' && noteTag === target.name) setNoteTag(null);
+    await refresh();
+  };
 
   const createIn = (target: 'tasks' | 'notes' | 'reports') => {
     if (target === 'tasks') {
@@ -234,16 +250,37 @@ export function Sidebar() {
                         ? `取消「${tag.name}」筛选`
                         : `只看「${tag.name}」`
                     }
+                    aria-label={`标签 ${tag.name}，${(tag.taskCount ?? 0) + (tag.noteCount ?? 0)} 条`}
                     className={cn(
-                      'flex h-8 w-full items-center gap-2 rounded-lg px-2 text-[13px] transition',
+                      'group flex h-8 w-full items-center gap-2 rounded-lg px-3 text-[13px] transition',
                       (module === 'tasks' ? taskTag : noteTag) === tag.name
                         ? 'bg-[var(--surface-2)] font-medium text-[var(--ink)] shadow-sm'
                         : 'text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]',
                     )}
                   >
-                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} />
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: tag.color }} />
                     <span className="flex-1 truncate text-left">{tag.name}</span>
                     <span className="text-[12px] tabular-nums text-[var(--faint)]">{(tag.taskCount ?? 0) + (tag.noteCount ?? 0)}</span>
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`删除标签 ${tag.name}`}
+                      title={`删除标签「${tag.name}」`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setTagToDelete(tag);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setTagToDelete(tag);
+                        }
+                      }}
+                      className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-[var(--faint)] opacity-0 transition hover:text-red-500 focus-visible:opacity-100 group-hover:opacity-100"
+                    >
+                      <X size={11} />
+                    </span>
                   </button>
                 ))
               )}
@@ -274,6 +311,24 @@ export function Sidebar() {
           <span>数据保存在本地</span>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={tagToDelete !== null}
+        title={`删除标签「${tagToDelete?.name ?? ''}」？`}
+        description={
+          tagToDelete && (tagToDelete.taskCount ?? 0) + (tagToDelete.noteCount ?? 0) > 0 ? (
+            <>
+              「{tagToDelete.name}」目前用在 {tagToDelete.taskCount ?? 0} 个任务、
+              {tagToDelete.noteCount ?? 0} 篇笔记上。删除后这些条目会失去该标签，内容本身不受影响。
+            </>
+          ) : (
+            <>「{tagToDelete?.name ?? ''}」没有关联任何条目，删除后不会影响任务或笔记。</>
+          )
+        }
+        confirmLabel="删除标签"
+        onConfirm={() => void confirmDeleteTag()}
+        onCancel={() => setTagToDelete(null)}
+      />
     </aside>
   );
 }

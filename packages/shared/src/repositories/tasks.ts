@@ -1,7 +1,7 @@
 import type { MemexDatabase } from '../db/database.js';
 import { randomUUID } from 'node:crypto';
 import type { Task, TaskCounts, TaskFilter, TaskInput, TaskPatch, TaskPriority, TaskStatus, TaskView } from '../types.js';
-import { setEntityTags, getEntityTags } from './tags.js';
+import { pruneOrphanTags, setEntityTags, getEntityTags } from './tags.js';
 import { futureRange, getDayRange } from './time.js';
 
 interface TaskRow {
@@ -206,6 +206,7 @@ export function createTaskRepository(db: MemexDatabase): TaskRepository {
 
     purge(id) {
       db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
+      pruneOrphanTags(db);
     },
 
     setTags(id, names) {

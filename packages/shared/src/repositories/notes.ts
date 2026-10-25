@@ -2,7 +2,7 @@ import type { MemexDatabase } from '../db/database.js';
 import { randomUUID } from 'node:crypto';
 import type { Note, NoteCounts, NoteFilter, NoteInput, NotePatch, NoteSummary, NoteView } from '../types.js';
 import { deriveNoteTitle } from '../validation.js';
-import { getEntityTags, setEntityTags } from './tags.js';
+import { getEntityTags, pruneOrphanTags, setEntityTags } from './tags.js';
 
 interface NoteRow {
   id: string;
@@ -160,6 +160,7 @@ export function createNoteRepository(db: MemexDatabase): NoteRepository {
 
     purge(id) {
       db.prepare('DELETE FROM notes WHERE id = ?').run(id);
+      pruneOrphanTags(db);
     },
 
     setTags(id, names) {
