@@ -17,6 +17,7 @@ import { useReportStore } from '../../store/useReportStore';
 import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
 import { DatePicker } from '../ui/date-picker';
+import { Select } from '../ui/select';
 import { cn } from '../ui/utils';
 
 const GROUPS: { status: ReportCandidate['status']; label: string; icon: typeof Circle }[] = [
@@ -323,19 +324,17 @@ export function NewReportWizard() {
             <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
               <label className="space-y-1.5">
                 <span className="text-[12px] text-[var(--muted)]">周报模板</span>
-                <select
+                <Select
                   value={templateId}
-                  onChange={(event) => setTemplateId(event.target.value)}
-                  className="h-9 w-full rounded-lg border border-[var(--line)] bg-[var(--surface-2)] px-3 text-[15px] text-[var(--ink)] outline-none focus:border-[var(--accent)]/60"
-                >
-                  {templates.length === 0 ? <option value="">没有可用模板</option> : null}
-                  {templates.map((template) => (
-                    <option key={template.id} value={template.id}>
-                      {template.name}
-                      {template.isBuiltin ? '（内置）' : ''}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setTemplateId}
+                  label="周报模板"
+                  className="h-9 w-full text-[15px]"
+                  options={templates.map((template) => ({
+                    value: template.id,
+                    label: `${template.name}${template.isBuiltin ? '（内置）' : ''}`,
+                  }))}
+                  placeholder={templates.length === 0 ? '没有可用模板' : '选择模板'}
+                />
               </label>
               <label className="flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--surface-2)] px-3 text-[12px] text-[var(--ink)]">
                 <Checkbox checked={includeNotes} onChange={setIncludeNotes} label="包含关联笔记" />

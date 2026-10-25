@@ -18,6 +18,7 @@ import type { Task, TaskPriority, TaskStatus } from '@memex/shared';
 import { useAppStore } from '../../store/useAppStore';
 import { Button } from '../ui/button';
 import { DatePicker } from '../ui/date-picker';
+import { Select } from '../ui/select';
 import { cn } from '../ui/utils';
 import { formatDue } from '../../lib/date';
 
@@ -314,18 +315,13 @@ export function TaskDetail() {
                     <Link2 size={11} /> 关联笔记
                   </span>
                   <div>
-                    <select
+                    <Select
                       value={task.noteId ?? ''}
-                      onChange={(event) => void updateTask(task.id, { noteId: event.target.value || null })}
-                      className="h-8 max-w-[280px] rounded-lg border border-[var(--line)] bg-[var(--surface-2)] px-2 text-[12px] text-[var(--ink)] outline-none"
-                    >
-                      <option value="">未关联</option>
-                      {notes.map((note) => (
-                        <option key={note.id} value={note.id}>
-                          {note.title}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(next) => void updateTask(task.id, { noteId: next || null })}
+                      label="关联笔记"
+                      className="max-w-[280px]"
+                      options={[{ value: '', label: '未关联' }, ...notes.map((note) => ({ value: note.id, label: note.title }))]}
+                    />
                     {task.noteInTrash ? <p className="mt-1 text-[12px] text-amber-600">关联笔记在回收站</p> : null}
                   </div>
                 </div>
