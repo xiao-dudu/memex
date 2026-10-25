@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Sidebar } from './components/layout/Sidebar';
+import { SplashScreen } from './components/layout/SplashScreen';
 import { TitleBar } from './components/layout/TitleBar';
 import { TaskList } from './components/tasks/TaskList';
 import { TaskDetail } from './components/tasks/TaskDetail';
@@ -13,6 +14,8 @@ import { SearchPalette } from './components/search/SearchPalette';
 import { SettingsDialog } from './components/settings/SettingsDialog';
 import { useAppStore } from './store/useAppStore';
 import { useReportStore } from './store/useReportStore';
+
+const SPLASH_MIN_DURATION = 1150;
 
 export default function App() {
   const {
@@ -39,8 +42,17 @@ export default function App() {
   } = useAppStore();
   const startNewReport = useReportStore((state) => state.startNewReport);
 
+  const [showSplash, setShowSplash] = useState(
+    () => !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  );
+
   useEffect(() => {
-    void bootstrap();
+    const started = Date.now();
+    void bootstrap().finally(() => {
+      // 数据可能比动画先好，也可能更慢；取两者较晚的那个，避免开场被硬切成半截
+      const remain = Math.max(0, SPLASH_MIN_DURATION - (Date.now() - started));
+      window.setTimeout(() => setShowSplash(false), remain);
+    });
   }, [bootstrap]);
 
   // MCP 客户端在外部写库后界面不会自动更新，窗口重新获得焦点时补一次读取。
@@ -177,6 +189,8 @@ export default function App() {
 
       <SearchPalette />
       <SettingsDialog />
+
+      <AnimatePresence>{showSplash ? <SplashScreen key="splash" /> : null}</AnimatePresence>
     </div>
   );
 }
