@@ -40,6 +40,7 @@ export function TaskList() {
     updateTask,
     setListCollapsed,
     detailCollapsed,
+    taskTag,
   } = useAppStore();
   const [statusFilter, setStatusFilter] = useState<'all' | TaskStatus>('all');
   const [draft, setDraft] = useState('');
@@ -145,9 +146,15 @@ export function TaskList() {
             <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--surface-2)] text-[var(--faint)] shadow-sm">
               {taskView === 'inbox' ? <ListTodo size={20} /> : <SearchX size={20} />}
             </div>
-            <p className="text-[13px] font-medium">{taskView === 'inbox' ? '还没有任务' : '这里还没有内容'}</p>
+            <p className="text-[13px] font-medium">
+              {taskTag ? `「${taskTag}」下没有任务` : taskView === 'inbox' ? '还没有任务' : '这里还没有内容'}
+            </p>
             <p className="mt-1 text-[12px] leading-5 text-[var(--faint)]">
-              {taskView === 'trash' ? '删除的任务会在这里保留 30 天。' : '在上方输入框写下第一件事。'}
+              {taskTag
+                ? '再次点击左侧标签即可取消筛选。'
+                : taskView === 'trash'
+                  ? '删除的任务会在这里保留 30 天。'
+                  : '在上方输入框写下第一件事。'}
             </p>
           </div>
         ) : (

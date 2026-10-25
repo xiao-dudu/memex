@@ -153,12 +153,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setTaskView(view) {
-    set({ taskView: view, module: 'tasks', listCollapsed: false });
+    set({ taskView: view, module: 'tasks', taskTag: null, listCollapsed: false });
     void get().refresh();
   },
 
   setNoteView(view) {
-    set({ noteView: view, module: 'notes', listCollapsed: false });
+    set({ noteView: view, module: 'notes', noteTag: null, listCollapsed: false });
     void get().refresh();
   },
 
@@ -214,12 +214,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setTaskTag(tag) {
-    set({ module: 'tasks', taskTag: tag, listCollapsed: false });
+    const next = tag !== null && tag === get().taskTag ? null : tag;
+    set({ module: 'tasks', taskTag: next, listCollapsed: false });
     void get().refresh();
   },
 
   setNoteTag(tag) {
-    set({ module: 'notes', noteTag: tag, listCollapsed: false });
+    const next = tag !== null && tag === get().noteTag ? null : tag;
+    set({ module: 'notes', noteTag: next, listCollapsed: false });
     void get().refresh();
   },
 

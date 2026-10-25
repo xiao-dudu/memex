@@ -229,6 +229,11 @@ export function Sidebar() {
                   <button
                     key={tag.id}
                     onClick={() => (module === 'tasks' ? setTaskTag(tag.name) : setNoteTag(tag.name))}
+                    title={
+                      (module === 'tasks' ? taskTag : noteTag) === tag.name
+                        ? `取消「${tag.name}」筛选`
+                        : `只看「${tag.name}」`
+                    }
                     className={cn(
                       'flex h-8 w-full items-center gap-2 rounded-lg px-2 text-[13px] transition',
                       (module === 'tasks' ? taskTag : noteTag) === tag.name

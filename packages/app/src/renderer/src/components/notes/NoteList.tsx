@@ -10,7 +10,7 @@ import { relativeTime } from '../../lib/date';
 const VIEW_TITLES: Record<NoteView, string> = { all: '全部笔记', pinned: '置顶', trash: '回收站' };
 
 export function NoteList() {
-  const { notes, noteView, activeNote, loading, selectNote, createNote, togglePin, setListCollapsed, detailCollapsed } = useAppStore();
+  const { notes, noteView, activeNote, loading, selectNote, createNote, togglePin, setListCollapsed, detailCollapsed, noteTag } = useAppStore();
 
   const summary = useMemo(() => {
     if (noteView === 'trash') return '删除的笔记会保留 30 天';
@@ -55,9 +55,15 @@ export function NoteList() {
             <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--surface-2)] text-[var(--faint)] shadow-sm">
               {noteView === 'trash' ? <SearchX size={20} /> : <StickyNote size={20} />}
             </div>
-            <p className="text-[13px] font-medium">{noteView === 'trash' ? '回收站是空的' : '还没有笔记'}</p>
+            <p className="text-[13px] font-medium">
+              {noteTag ? `「${noteTag}」下没有笔记` : noteView === 'trash' ? '回收站是空的' : '还没有笔记'}
+            </p>
             <p className="mt-1 text-[12px] leading-5 text-[var(--faint)]">
-              {noteView === 'trash' ? '删除的笔记会在这里保留 30 天。' : '把想法、会议记录和参考资料放在这里。'}
+              {noteTag
+                ? '再次点击左侧标签即可取消筛选。'
+                : noteView === 'trash'
+                  ? '删除的笔记会在这里保留 30 天。'
+                  : '把想法、会议记录和参考资料放在这里。'}
             </p>
           </div>
         ) : (
