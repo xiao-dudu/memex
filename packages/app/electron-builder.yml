@@ -19,6 +19,7 @@ win:
       arch:
         - x64
 nsis:
+  include: resources/installer.nsh
   oneClick: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
