@@ -61,6 +61,8 @@ jobs:
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           name: Memex ${{ github.event.inputs.tag || github.ref_name }}
+          # 应用内的更新弹窗展示的是 release body，没有正文等于没有「更新内容」
+          generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
             release/Memex-Setup-*.exe
