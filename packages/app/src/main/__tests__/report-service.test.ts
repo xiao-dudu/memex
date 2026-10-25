@@ -2,7 +2,7 @@
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createNoteRepository,
   createReportRepository,
@@ -54,6 +54,11 @@ function period() {
 }
 
 beforeEach(() => {
+  // 任务是用 Date.now() 落库的，而本文件的时间范围写死为 2026-10-19 ~ 10-26。
+  // 不固定系统时间的话，真实时间一旦越过 10-26，新建任务就落在范围外，
+  // listCandidates 取不到，测试会以「任务数据已变化」失败。
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.setSystemTime(new Date(2026, 9, 22, 12, 0, 0));
   db = openDatabase(join(mkdtempSync(join(tmpdir(), 'memex-report-service-')), 'test.db'));
   runMigrations(db);
   templates = createReportTemplateRepository(db);
@@ -62,6 +67,10 @@ beforeEach(() => {
   notes = createNoteRepository(db);
   templateId = templates.list()[0]!.id;
   request = vi.fn(async () => ({ content: '# 本周完成\n\n- 完成周报模块' }) as AiCompletionResult);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('report service candidates', () => {
