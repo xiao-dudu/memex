@@ -16,7 +16,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { useReportStore } from '../../store/useReportStore';
 import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
-import { Input } from '../ui/input';
+import { DatePicker } from '../ui/date-picker';
 import { cn } from '../ui/utils';
 
 const GROUPS: { status: ReportCandidate['status']; label: string; icon: typeof Circle }[] = [
@@ -281,26 +281,32 @@ export function NewReportWizard() {
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="space-y-1.5">
                 <span className="text-[12px] text-[var(--muted)]">开始日期</span>
-                <Input
-                  type="date"
+                <DatePicker
                   disabled={loadingCandidates}
-                  value={periodStart}
-                  onChange={(event) => {
-                    setPeriodStart(event.target.value);
+                  value={periodStart ? localDayStart(periodStart) : null}
+                  onChange={(next) => {
+                    if (next === null) return;
+                    setPeriodStart(formatLocalDateInput(next));
                     resetCandidates();
                   }}
+                  allowClear={false}
+                  placeholder="选择开始日期"
+                  label="开始日期"
                 />
               </label>
               <label className="space-y-1.5">
                 <span className="text-[12px] text-[var(--muted)]">结束日期</span>
-                <Input
-                  type="date"
+                <DatePicker
                   disabled={loadingCandidates}
-                  value={periodEnd}
-                  onChange={(event) => {
-                    setPeriodEnd(event.target.value);
+                  value={periodEnd ? localDayStart(periodEnd) : null}
+                  onChange={(next) => {
+                    if (next === null) return;
+                    setPeriodEnd(formatLocalDateInput(next));
                     resetCandidates();
                   }}
+                  allowClear={false}
+                  placeholder="选择结束日期"
+                  label="结束日期"
                 />
               </label>
             </div>

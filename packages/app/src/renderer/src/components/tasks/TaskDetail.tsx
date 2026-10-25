@@ -17,8 +17,9 @@ import { AnimatePresence, motion } from 'motion/react';
 import type { Task, TaskPriority, TaskStatus } from '@memex/shared';
 import { useAppStore } from '../../store/useAppStore';
 import { Button } from '../ui/button';
+import { DatePicker } from '../ui/date-picker';
 import { cn } from '../ui/utils';
-import { formatDue, fromDateTimeInput, toDateTimeInput } from '../../lib/date';
+import { formatDue } from '../../lib/date';
 
 const STATUS_META: { value: TaskStatus; label: string; icon: typeof Circle }[] = [
   { value: 'todo', label: '待办', icon: Circle },
@@ -275,11 +276,12 @@ export function TaskDetail() {
                   <span className="flex items-center gap-2 pt-2 text-[12px] uppercase tracking-[0.12em] text-[var(--faint)]">
                     <CalendarClock size={11} /> 截止
                   </span>
-                  <input
-                    type="datetime-local"
-                    value={toDateTimeInput(task.dueAt)}
-                    onChange={(event) => void updateTask(task.id, { dueAt: fromDateTimeInput(event.target.value) })}
-                    className="h-8 w-fit rounded-lg border border-transparent bg-transparent px-2 text-[13px] text-[var(--ink)] outline-none transition hover:border-[var(--line)] focus:border-[var(--line)] focus:bg-[var(--surface-2)]"
+                  <DatePicker
+                    value={task.dueAt}
+                    onChange={(next) => void updateTask(task.id, { dueAt: next })}
+                    withTime
+                    label="截止时间"
+                    placeholder="设置截止时间"
                   />
 
                   <span className="flex items-center gap-2 pt-2 text-[12px] uppercase tracking-[0.12em] text-[var(--faint)]">
