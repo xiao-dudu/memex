@@ -120,7 +120,7 @@ export function AiServiceSettings() {
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-4 text-[11px] text-[var(--faint)]">
+      <div className="flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-4 text-[12px] text-[var(--faint)]">
         <Loader2 size={13} className="animate-spin" /> 正在读取 AI 配置…
       </div>
     );
@@ -130,7 +130,7 @@ export function AiServiceSettings() {
     <div className="space-y-3">
       <div className="grid gap-3">
         <label className="space-y-1.5">
-          <span className="text-[10.5px] text-[var(--muted)]">Base URL</span>
+          <span className="text-[12px] text-[var(--muted)]">Base URL</span>
           <Input
             aria-label="Base URL"
             value={baseUrl}
@@ -140,7 +140,7 @@ export function AiServiceSettings() {
           />
         </label>
         <label className="space-y-1.5">
-          <span className="text-[10.5px] text-[var(--muted)]">模型</span>
+          <span className="text-[12px] text-[var(--muted)]">模型</span>
           <Input
             aria-label="模型"
             value={model}
@@ -150,7 +150,7 @@ export function AiServiceSettings() {
           />
         </label>
         <label className="space-y-1.5">
-          <span className="text-[10.5px] text-[var(--muted)]">超时（秒）</span>
+          <span className="text-[12px] text-[var(--muted)]">超时（秒）</span>
           <Input
             aria-label="超时时间（秒）"
             type="number"
@@ -162,7 +162,7 @@ export function AiServiceSettings() {
           />
         </label>
         <label className="space-y-1.5">
-          <span className="flex items-center gap-1.5 text-[10.5px] text-[var(--muted)]">
+          <span className="flex items-center gap-1.5 text-[12px] text-[var(--muted)]">
             <KeyRound size={11} /> API Key
           </span>
           <Input
@@ -188,7 +188,7 @@ export function AiServiceSettings() {
         {config?.hasApiKey ? (
           clearConfirm ? (
             <>
-              <span className="text-[10px] text-red-600">清除后需重新配置 Key。</span>
+              <span className="text-[12px] text-red-600">清除后需重新配置 Key。</span>
               <Button variant="ghost" size="sm" disabled={saving} onClick={() => setClearConfirm(false)}>取消</Button>
               <Button variant="danger" size="sm" disabled={saving} onClick={() => void clearKey()}>确认清除</Button>
             </>
@@ -200,7 +200,7 @@ export function AiServiceSettings() {
         ) : null}
       </div>
 
-      <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-2.5 text-[10px] leading-5 text-[var(--faint)]">
+      <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-2.5 text-[12px] leading-5 text-[var(--faint)]">
         <p className="flex items-center gap-1.5 font-medium text-[var(--muted)]">
           <ShieldCheck size={12} /> 数据发送说明
         </p>
@@ -208,8 +208,8 @@ export function AiServiceSettings() {
         {config?.hasApiKey ? <p className="mt-1 flex items-center gap-1 text-[var(--success)]"><Check size={10} /> API Key 已配置</p> : null}
       </div>
 
-      {message ? <p className="text-[10.5px] text-[var(--success)]">{message}</p> : null}
-      {error ? <p className="text-[10.5px] text-red-600">{error}</p> : null}
+      {message ? <p className="text-[12px] text-[var(--success)]">{message}</p> : null}
+      {error ? <p className="text-[12px] text-red-600">{error}</p> : null}
     </div>
   );
 }

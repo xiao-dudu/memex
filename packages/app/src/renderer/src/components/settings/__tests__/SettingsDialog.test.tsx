@@ -49,15 +49,20 @@ afterEach(() => {
   cleanup();
 });
 
+async function openAiAccess() {
+  render(<SettingsDialog />);
+  fireEvent.click(await screen.findByRole('button', { name: 'AI 访问权限' }));
+}
+
 describe('Settings dialog MCP task write', () => {
   it('渲染写入开关并默认关闭', async () => {
-    render(<SettingsDialog />);
+    await openAiAccess();
     const toggle = await screen.findByRole('switch', { name: /允许 AI 修改任务/ });
     expect(toggle).toHaveAttribute('aria-checked', 'false');
   });
 
   it('打开开关时写入 mcpTaskWrite', async () => {
-    render(<SettingsDialog />);
+    await openAiAccess();
     fireEvent.click(await screen.findByRole('switch', { name: /允许 AI 修改任务/ }));
     expect(updateSettings).toHaveBeenCalledWith({ mcpTaskWrite: true });
   });
