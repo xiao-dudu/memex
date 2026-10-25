@@ -15,7 +15,9 @@ import { SettingsDialog } from './components/settings/SettingsDialog';
 import { useAppStore } from './store/useAppStore';
 import { useReportStore } from './store/useReportStore';
 
-const SPLASH_MIN_DURATION = 2550;
+// 0.55s 起始延迟 + 3 × 1.05s = 3.7s 跑完三遍；淡出 260ms 与之对齐，
+// 让第三遍恰好在淡出结束时收尾，避免收尾瞬间进度条跳回左边
+const SPLASH_MIN_DURATION = 3440;
 
 export default function App() {
   const {

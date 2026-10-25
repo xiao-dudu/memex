@@ -51,6 +51,7 @@ export function SplashScreen() {
 
       <div className="mt-4 h-px w-[104px] overflow-hidden bg-[var(--line)]">
         <motion.div
+          data-splash-bar="true"
           className="h-full w-[36%]"
           style={{ backgroundColor: '#B44724' }}
           initial={{ x: '-100%' }}
