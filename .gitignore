@@ -52,3 +52,6 @@ skills-lock.json
 
 # 本地 agent 记忆与工作区（不追踪）
 .workbuddy-ai/
+
+# electron-vite 构建时生成的临时配置文件
+packages/app/electron.vite.config.ts.*.mjs

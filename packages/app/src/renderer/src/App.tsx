@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Sidebar } from './components/layout/Sidebar';
 import { SplashScreen } from './components/layout/SplashScreen';
+import { UpdatePrompt } from './components/layout/UpdatePrompt';
 import { TitleBar } from './components/layout/TitleBar';
 import { TaskList } from './components/tasks/TaskList';
 import { TaskDetail } from './components/tasks/TaskDetail';
@@ -14,10 +15,31 @@ import { SearchPalette } from './components/search/SearchPalette';
 import { SettingsDialog } from './components/settings/SettingsDialog';
 import { useAppStore } from './store/useAppStore';
 import { useReportStore } from './store/useReportStore';
+import type { UpdateState } from '@memex/shared';
 
 // 0.55s 起始延迟 + 3 × 1.05s = 3.7s 跑完三遍；淡出 260ms 与之对齐，
 // 让第三遍恰好在淡出结束时收尾，避免收尾瞬间进度条跳回左边
 const SPLASH_MIN_DURATION = 3440;
+// 开场结束后先静默检查，确认有新版本再等一会儿才弹窗，避免和开场撞在一起
+const UPDATE_CHECK_DELAY = 900;
+const UPDATE_PROMPT_DELAY = 6000;
+const UPDATE_SKIP_KEY = 'memex:update-skip';
+
+function readSkippedVersion(): string | null {
+  try {
+    return localStorage.getItem(UPDATE_SKIP_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeSkippedVersion(version: string): void {
+  try {
+    localStorage.setItem(UPDATE_SKIP_KEY, version);
+  } catch {
+    // 存不了就算了，最多下次再提示一遍
+  }
+}
 
 export default function App() {
   const {
@@ -75,6 +97,41 @@ export default function App() {
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, [refresh]);
+
+  const [updatePrompt, setUpdatePrompt] = useState<UpdateState | null>(null);
+
+  // 启动后静默检查更新：网络异常、已是最新、用户跳过过这个版本，都保持安静
+  useEffect(() => {
+    if (showSplash) return;
+    let cancelled = false;
+    const timers: number[] = [];
+
+    const run = async () => {
+      await new Promise<void>((resolve) => {
+        timers.push(window.setTimeout(resolve, UPDATE_CHECK_DELAY));
+      });
+      if (cancelled) return;
+
+      try {
+        const state = await window.memex.update.check();
+        if (cancelled || state.phase !== 'available' || !state.latestVersion) return;
+        if (readSkippedVersion() === state.latestVersion) return;
+        timers.push(
+          window.setTimeout(() => {
+            if (!cancelled) setUpdatePrompt(state);
+          }, UPDATE_PROMPT_DELAY),
+        );
+      } catch {
+        // 网络问题不打扰用户，设置页里仍可手动检查
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+      timers.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, [showSplash]);
 
   useEffect(() => {
     const theme = settings?.theme ?? 'system';
@@ -193,6 +250,15 @@ export default function App() {
       <SettingsDialog />
 
       <AnimatePresence>{showSplash ? <SplashScreen key="splash" /> : null}</AnimatePresence>
+
+      <UpdatePrompt
+        state={updatePrompt}
+        onDismiss={() => setUpdatePrompt(null)}
+        onSkip={(version) => {
+          writeSkippedVersion(version);
+          setUpdatePrompt(null);
+        }}
+      />
     </div>
   );
 }
