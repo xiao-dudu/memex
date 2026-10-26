@@ -21,6 +21,7 @@ import { DatePicker } from '../ui/date-picker';
 import { Select } from '../ui/select';
 import { cn } from '../ui/utils';
 import { formatDue } from '../../lib/date';
+import { TaskDescriptionDrawer } from './TaskDescriptionDrawer';
 
 const STATUS_META: { value: TaskStatus; label: string; icon: typeof Circle }[] = [
   { value: 'todo', label: '待办', icon: Circle },
@@ -39,60 +40,50 @@ const PRIORITY_META: { value: TaskPriority; label: string; color: string }[] = [
 export function TaskDetail() {
   const { activeTask, notes, updateTask, deleteTask, restoreTask, purgeTask, setListCollapsed } = useAppStore();
   const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
   const [tagDraft, setTagDraft] = useState('');
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [propertiesCollapsed, setPropertiesCollapsed] = useState(readPropertiesCollapsed);
+  const [descriptionOpen, setDescriptionOpen] = useState(false);
   const taskIdRef = useRef<string | null>(null);
-  // 上一次“已落库”的值。用来区分“本地草稿被用户改过”和“外部把库里的值改了”。
-  const lastSavedRef = useRef({ title: '', description: '' });
+  // 上一次“已落库”的标题。用来区分“本地草稿被用户改过”和“外部把库里的值改了”。
+  const lastSavedTitleRef = useRef('');
 
   useEffect(() => {
     if (!activeTask) return;
-    const remote = { title: activeTask.title, description: activeTask.description ?? '' };
 
     if (activeTask.id !== taskIdRef.current) {
       taskIdRef.current = activeTask.id;
-      lastSavedRef.current = remote;
-      setTitle(remote.title);
-      setDescription(remote.description);
+      lastSavedTitleRef.current = activeTask.title;
+      setTitle(activeTask.title);
       setSaveState('idle');
+      setDescriptionOpen(false);
       return;
     }
 
     // 同一条任务被外部改写（列表里重命名、MCP 写入）：草稿干净时才同步过来。
     // 不同步的话，下面的自动保存会把旧标题写回库里，把外面的修改覆盖掉。
-    const saved = lastSavedRef.current;
-    if (remote.title !== saved.title) {
-      lastSavedRef.current = { ...saved, title: remote.title };
-      setTitle((current) => (current === saved.title ? remote.title : current));
-    }
-    if (remote.description !== saved.description) {
-      lastSavedRef.current = { ...lastSavedRef.current, description: remote.description };
-      setDescription((current) => (current === saved.description ? remote.description : current));
+    const saved = lastSavedTitleRef.current;
+    if (activeTask.title !== saved) {
+      lastSavedTitleRef.current = activeTask.title;
+      setTitle((current) => (current === saved ? activeTask.title : current));
     }
   }, [activeTask]);
 
   useEffect(() => {
     if (!activeTask) return;
-    const patch: { title?: string; description?: string } = {};
-    if (title.trim() && title !== activeTask.title) patch.title = title.trim();
-    if (description !== (activeTask.description ?? '')) patch.description = description;
-    if (Object.keys(patch).length === 0) return;
+    const nextTitle = title.trim();
+    if (!nextTitle || nextTitle === activeTask.title) return;
 
     const timer = setTimeout(() => {
       setSaveState('saving');
-      void updateTask(activeTask.id, patch).then(() => {
-        lastSavedRef.current = {
-          title: patch.title ?? lastSavedRef.current.title,
-          description: patch.description ?? lastSavedRef.current.description,
-        };
+      void updateTask(activeTask.id, { title: nextTitle }).then(() => {
+        lastSavedTitleRef.current = nextTitle;
         setSaveState('saved');
         window.setTimeout(() => setSaveState('idle'), 1400);
       });
     }, 450);
     return () => clearTimeout(timer);
-  }, [title, description, activeTask, updateTask]);
+  }, [title, activeTask, updateTask]);
 
   if (!activeTask) {
     return (
@@ -113,6 +104,9 @@ export function TaskDetail() {
   const summary = [statusLabel, priorityLabel, task.dueAt ? formatDue(task.dueAt) : null, ...task.tags]
     .filter(Boolean)
     .join(' · ');
+  const descriptionText = task.description?.trim() ?? '';
+  // 超过三行或明显超长才提示可展开，短描述不打扰。
+  const descriptionOverflow = descriptionText.length > 96 || descriptionText.split('\n').length > 3;
 
   const toggleProperties = () => {
     setPropertiesCollapsed((current) => {
@@ -193,12 +187,27 @@ export function TaskDetail() {
           />
         </div>
 
-        <textarea
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
-          placeholder="补充描述、上下文或下一步…"
-          className="-mx-3 mt-5 min-h-[90px] w-[calc(100%+24px)] resize-none rounded-xl border border-transparent bg-transparent px-3 py-2 font-serif text-[15px] leading-7 outline-none transition placeholder:text-[var(--faint)] hover:border-[var(--line)] focus:border-[var(--line)] focus:bg-[var(--surface)]"
-        />
+        <button
+          type="button"
+          onClick={() => setDescriptionOpen(true)}
+          aria-label="打开任务描述"
+          className="group -mx-3 mt-5 flex w-[calc(100%+24px)] items-start gap-2 rounded-xl border border-transparent px-3 py-2 text-left transition hover:border-[var(--line)] hover:bg-[var(--surface)]"
+        >
+          <span className="min-w-0 flex-1">
+            {descriptionText ? (
+              <span className="line-clamp-3 whitespace-pre-wrap font-serif text-[15px] leading-7 text-[var(--ink)]">
+                {descriptionText}
+              </span>
+            ) : (
+              <span className="font-serif text-[15px] leading-7 text-[var(--faint)]">补充描述、上下文或下一步…</span>
+            )}
+          </span>
+          {descriptionOverflow ? (
+            <span className="mt-1 shrink-0 text-[12px] text-[var(--faint)] opacity-0 transition group-hover:opacity-100">
+              展开
+            </span>
+          ) : null}
+        </button>
 
         <div className="mt-6 border-t border-[var(--line)]">
           <button
@@ -355,6 +364,7 @@ export function TaskDetail() {
           )}
         </div>
       </div>
+      <TaskDescriptionDrawer task={task} open={descriptionOpen} onClose={() => setDescriptionOpen(false)} />
     </motion.section>
   );
 }

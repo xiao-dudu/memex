@@ -355,6 +355,42 @@ describe('create_task tool', () => {
     await server.close();
   });
 
+  it('Markdown 描述会同时落一份富文本文档', async () => {
+    enableTaskWrite();
+    const { server, client } = await connect();
+    const created = await client.callTool({
+      name: 'create_task',
+      arguments: { title: '带描述的任务', description: '- 第一项\n- 第二项' },
+    });
+    const payload = JSON.parse(textOf(created)) as { task: { id: string; description: string } };
+    expect(payload.task.description).toBe('- 第一项\n- 第二项');
+
+    const row = db.prepare('SELECT description_json FROM tasks WHERE id = ?').get(payload.task.id) as {
+      description_json: string;
+    };
+    const doc = JSON.parse(row.description_json) as { type: string; content: { type: string }[] };
+    expect(doc.type).toBe('doc');
+    expect(doc.content.map((node) => node.type)).toEqual(['bulletList']);
+    await client.close();
+    await server.close();
+  });
+
+  it('update_task 改描述时同步更新文档，清空时置空', async () => {
+    enableTaskWrite();
+    const { server, client } = await connect();
+    await client.callTool({ name: 'update_task', arguments: { id: taskId, description: '# 标题\n正文' } });
+
+    const updated = db.prepare('SELECT description_json FROM tasks WHERE id = ?').get(taskId) as { description_json: string };
+    const doc = JSON.parse(updated.description_json) as { content: { type: string }[] };
+    expect(doc.content.map((node) => node.type)).toEqual(['heading', 'paragraph']);
+
+    await client.callTool({ name: 'update_task', arguments: { id: taskId, description: null } });
+    const cleared = db.prepare('SELECT description_json FROM tasks WHERE id = ?').get(taskId) as { description_json: string | null };
+    expect(cleared.description_json).toBeNull();
+    await client.close();
+    await server.close();
+  });
+
   it('标题为空白时返回 INVALID_ARGUMENT 且不落库', async () => {
     enableTaskWrite();
     const { server, client } = await connect();

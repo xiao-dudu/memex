@@ -14,6 +14,7 @@ const tagListSchema = z.array(tagSchema).max(20).optional();
 export const taskCreateSchema = z.object({
   title: titleSchema,
   description: z.string().max(20000).nullish(),
+  descriptionJson: z.string().max(200_000).nullish(),
   status: taskStatusSchema.optional(),
   priority: taskPrioritySchema.optional(),
   dueAt: z.number().int().nonnegative().nullish(),
@@ -24,6 +25,7 @@ export const taskCreateSchema = z.object({
 export const taskUpdateSchema = z.object({
   title: titleSchema.optional(),
   description: z.string().max(20000).nullish(),
+  descriptionJson: z.string().max(200_000).nullish(),
   status: taskStatusSchema.optional(),
   priority: taskPrioritySchema.optional(),
   dueAt: z.number().int().nonnegative().nullish(),

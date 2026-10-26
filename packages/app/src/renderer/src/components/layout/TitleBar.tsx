@@ -34,7 +34,7 @@ export function TitleBar({ onSearch, onSettings, onToggleSidebar, onToggleDetail
           <span className="flex-1">搜索任务与笔记…</span>
           <span className="flex items-center gap-2">
             <Kbd>Ctrl</Kbd>
-            <Kbd>K</Kbd>
+            <Kbd>F</Kbd>
           </span>
         </button>
       </div>

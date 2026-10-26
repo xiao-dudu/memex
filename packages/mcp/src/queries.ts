@@ -141,7 +141,10 @@ export function updateTask(db: MemexDatabase, args: UpdateTaskArgs) {
 
   const patch: TaskPatch = {};
   if (args.title !== undefined) patch.title = args.title;
-  if (args.description !== undefined) patch.description = args.description;
+  if (args.description !== undefined) {
+    patch.description = args.description;
+    patch.descriptionJson = args.description ? textToDocument(args.description) : null;
+  }
   if (args.status !== undefined) patch.status = args.status;
   if (args.priority !== undefined) patch.priority = args.priority;
   if (args.dueAt !== undefined) patch.dueAt = parseDueAt(args.dueAt);
@@ -208,6 +211,8 @@ export function createTask(db: MemexDatabase, args: CreateTaskArgs) {
   const task = createTaskRepository(db).create({
     title,
     description: args.description ?? null,
+    // 描述在 app 里是富文本：这里同时落一份文档 JSON，AI 写的 Markdown 打开抽屉就是排好版的。
+    descriptionJson: args.description ? textToDocument(args.description) : null,
     status: args.status,
     priority: args.priority,
     dueAt: parseDueAt(args.dueAt) ?? null,

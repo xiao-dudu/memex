@@ -8,6 +8,7 @@ interface TaskRow {
   id: string;
   title: string;
   description: string | null;
+  description_json: string | null;
   status: TaskStatus;
   priority: TaskPriority;
   due_at: number | null;
@@ -27,6 +28,7 @@ function mapTask(row: TaskRow, tags: string[]): Task {
     id: row.id,
     title: row.title,
     description: row.description,
+    descriptionJson: row.description_json,
     status: row.status,
     priority: row.priority,
     dueAt: row.due_at,
@@ -143,12 +145,13 @@ export function createTaskRepository(db: MemexDatabase): TaskRepository {
       const status = input.status ?? 'todo';
       const insert = db.transaction(() => {
         db.prepare(`
-          INSERT INTO tasks(id, title, description, status, priority, due_at, note_id, created_at, updated_at, completed_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO tasks(id, title, description, description_json, status, priority, due_at, note_id, created_at, updated_at, completed_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           id,
           input.title.trim(),
           input.description?.trim() || null,
+          input.descriptionJson ?? null,
           status,
           input.priority ?? 'medium',
           input.dueAt ?? null,
@@ -177,6 +180,7 @@ export function createTaskRepository(db: MemexDatabase): TaskRepository {
 
       if (patch.title !== undefined) assign('title', patch.title.trim());
       if (patch.description !== undefined) assign('description', patch.description?.trim() || null);
+      if (patch.descriptionJson !== undefined) assign('description_json', patch.descriptionJson);
       if (patch.status !== undefined) {
         assign('status', patch.status);
         if (patch.status === 'done' && existing.status !== 'done') assign('completed_at', now);

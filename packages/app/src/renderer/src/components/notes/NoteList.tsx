@@ -130,7 +130,7 @@ export function NoteList() {
       <footer className="flex h-9 shrink-0 items-center border-t border-[var(--line)] px-4 text-[12px] text-[var(--faint)]">
         <span>自动保存已开启</span>
         <span className="flex-1" />
-        <span>Ctrl+K 搜索</span>
+        <span>Ctrl+F 搜索</span>
       </footer>
     </section>
   );

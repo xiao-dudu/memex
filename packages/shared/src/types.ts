@@ -9,6 +9,8 @@ export interface Task {
   id: string;
   title: string;
   description: string | null;
+  /** TipTap 文档 JSON；老数据为 null，读取时由 description 现算。 */
+  descriptionJson: string | null;
   status: TaskStatus;
   priority: TaskPriority;
   dueAt: number | null;
@@ -63,6 +65,7 @@ export interface Tag {
 export interface TaskInput {
   title: string;
   description?: string | null;
+  descriptionJson?: string | null;
   status?: TaskStatus;
   priority?: TaskPriority;
   dueAt?: number | null;
@@ -73,6 +76,7 @@ export interface TaskInput {
 export interface TaskPatch {
   title?: string;
   description?: string | null;
+  descriptionJson?: string | null;
   status?: TaskStatus;
   priority?: TaskPriority;
   dueAt?: number | null;

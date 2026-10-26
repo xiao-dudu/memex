@@ -23,7 +23,7 @@ describe('export', () => {
     createTaskRepository(db).create({ title: '导出任务', tags: ['工作'] });
     createNoteRepository(db).create({ contentJson: '{}', plainText: '导出笔记' });
     const bundle = exportAll(db, new Date('2026-10-20T00:00:00Z'));
-    expect(bundle.schemaVersion).toBe(2);
+    expect(bundle.schemaVersion).toBe(3);
     expect(bundle.exportedAt).toBe('2026-10-20T00:00:00.000Z');
     expect(bundle.tasks).toHaveLength(1);
     expect(bundle.notes).toHaveLength(1);
@@ -70,7 +70,7 @@ describe('export', () => {
     db.prepare("INSERT OR REPLACE INTO settings(key, value) VALUES ('ai_api_key_encrypted', 'ciphertext')").run();
 
     const bundle = exportAll(db, new Date('2026-10-22T00:00:00Z'));
-    expect(bundle.schemaVersion).toBe(2);
+    expect(bundle.schemaVersion).toBe(3);
     expect(bundle.reportTemplates).toHaveLength(2);
     expect(bundle.reports).toHaveLength(0);
     expect(JSON.stringify(bundle)).not.toContain('ai_api_key_encrypted');

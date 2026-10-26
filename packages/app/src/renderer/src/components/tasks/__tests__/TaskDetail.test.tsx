@@ -10,6 +10,7 @@ const task: Task = {
   id: 'task-1',
   title: '项目计划评审',
   description: '确认范围',
+  descriptionJson: null,
   status: 'todo',
   priority: 'medium',
   dueAt: null,
@@ -59,5 +60,26 @@ describe('task properties panel', () => {
 
     expect(screen.getByRole('button', { name: '进行中' })).not.toBeNull();
     expect(screen.getByRole('button', { name: '收起任务属性' })).not.toBeNull();
+  });
+});
+
+describe('task description preview', () => {
+  it('详情页只展示描述摘要，点击后打开抽屉', () => {
+    render(<TaskDetail />);
+
+    expect(screen.queryByRole('dialog', { name: '任务描述' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '打开任务描述' }));
+
+    const drawer = screen.getByRole('dialog', { name: '任务描述' });
+    expect(drawer).not.toBeNull();
+    expect(drawer.textContent).toContain('项目计划评审');
+  });
+
+  it('没有描述时显示占位文案', () => {
+    useAppStore.setState({ activeTask: { ...task, description: null } });
+    render(<TaskDetail />);
+
+    expect(screen.getByRole('button', { name: '打开任务描述' }).textContent).toContain('补充描述');
   });
 });

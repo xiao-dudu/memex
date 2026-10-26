@@ -40,7 +40,14 @@ test('creates tasks, edits a note, searches, and exposes MCP config', async () =
   await page.getByText('项目计划评审', { exact: true }).click();
   const title = page.getByPlaceholder('任务标题');
   await title.fill('项目计划评审（终稿）');
-  await page.getByPlaceholder('补充描述、上下文或下一步…').fill('确认范围、时间线和交付物');
+  // 描述改成「3 行预览 + 抽屉富文本」，这里走真实交互：点开抽屉写，关掉后看预览。
+  await page.getByRole('button', { name: '打开任务描述' }).click();
+  const descriptionDrawer = page.getByRole('dialog', { name: '任务描述' });
+  const description = descriptionDrawer.locator('.ProseMirror');
+  await description.click();
+  await description.pressSequentially('确认范围、时间线和交付物');
+  await descriptionDrawer.getByRole('button', { name: '关闭' }).click();
+  await expect(page.getByRole('button', { name: '打开任务描述' })).toContainText('确认范围');
   await expect(title).toHaveValue('项目计划评审（终稿）');
   await page.waitForTimeout(900);
 
@@ -53,13 +60,15 @@ test('creates tasks, edits a note, searches, and exposes MCP config', async () =
   await editor.pressSequentially('确认项目计划与下一步安排。');
   await expect(page.getByText('会议记录 2026-10-20').first()).toBeVisible();
 
-  await page.keyboard.press('Control+K');
+  await page.keyboard.press('Control+F');
   await page.getByPlaceholder('搜索任务与笔记…').fill('项目计划');
   await expect(page.getByText('项目计划评审（终稿）', { exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
 
   await page.getByTitle('设置').click();
-  await expect(page.getByText('AI 访问权限')).toBeVisible();
+  // 弹窗默认停在「外观」页，要先切到 AI 访问权限才能看到复制按钮。
+  await page.getByText('AI 访问权限', { exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'AI 访问权限' })).toBeVisible();
   await page.getByText('复制 MCP 配置').click();
   const config = await app.evaluate(({ clipboard }) => clipboard.readText());
   const parsed = JSON.parse(config) as {

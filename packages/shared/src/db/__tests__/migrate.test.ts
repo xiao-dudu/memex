@@ -8,7 +8,7 @@ import { MIGRATIONS, runMigrations } from '../migrate.js';
 describe('migrations', () => {
   it('creates tables, FTS indexes and applies only once', () => {
     const db = openDatabase(join(mkdtempSync(join(tmpdir(), 'memex-')), 'test.db'));
-    expect(runMigrations(db)).toBe(2);
+    expect(runMigrations(db)).toBe(3);
     expect(runMigrations(db)).toBe(0);
 
     const names = (db.prepare("SELECT name FROM sqlite_master WHERE type IN ('table', 'view')").all() as { name: string }[]).map(
@@ -37,14 +37,14 @@ describe('migrations', () => {
       1,
     );
 
-    expect(runMigrations(db)).toBe(1);
+    expect(runMigrations(db)).toBe(2);
     expect(db.prepare('SELECT title FROM tasks WHERE id = ?').get('legacy-task')).toEqual({ title: '旧任务' });
     expect(db.prepare('SELECT count(*) AS count FROM report_templates').get()).toEqual({ count: 1 });
     db.close();
   });
   it('creates report tables and a built-in template', () => {
     const db = openDatabase(join(mkdtempSync(join(tmpdir(), 'memex-report-')), 'test.db'));
-    expect(runMigrations(db)).toBe(2);
+    expect(runMigrations(db)).toBe(3);
     expect(runMigrations(db)).toBe(0);
 
     const names = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map(

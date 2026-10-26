@@ -1,6 +1,6 @@
 import type { MemexDatabase } from './database.js';
 
-export const LATEST_SCHEMA_VERSION = 2;
+export const LATEST_SCHEMA_VERSION = 3;
 
 interface Migration {
   version: number;
@@ -145,9 +145,18 @@ INSERT OR IGNORE INTO report_templates(
 );
 `;
 
+/**
+ * 任务描述改成富文本：`description` 继续存纯文本（搜索、周报、MCP 都依赖它），
+ * `description_json` 存 TipTap 文档。老数据为 NULL，读取时由纯文本现算。
+ */
+const MIGRATION_3 = `
+ALTER TABLE tasks ADD COLUMN description_json TEXT;
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, sql: MIGRATION_1 },
   { version: 2, sql: MIGRATION_2 },
+  { version: 3, sql: MIGRATION_3 },
 ];
 
 export function getSchemaVersion(db: MemexDatabase): number {

@@ -170,10 +170,10 @@ git remote set-url github ssh://git@ssh.github.com:443/xiao-dudu/memex.git
 
 ## 功能
 
-- 任务：三态、优先级、截止时间、标签、智能视图、回收站
+- 任务：三态、优先级、截止时间、标签、智能视图、回收站；描述为富文本，详情页显示三行摘要，点开右侧抽屉编辑
 - 笔记：TipTap 富文本、自动保存、标签、置顶、回收站
 - 周报：结构化模板、任务筛选、关联笔记、历史快照、Markdown/PDF 导出
-- 统一搜索：`Ctrl+K`，中文全文搜索
+- 统一搜索：`Ctrl+F`，中文全文搜索
 - 快速捕获：`Ctrl+Shift+Space`，默认任务，`Ctrl+2` 切笔记
 - 本地数据：自动保存、每日备份（保留 7 份）、JSON 导出
 - MCP：读取任务/笔记，设置开启后可新建任务与笔记
@@ -214,11 +214,13 @@ git remote set-url github ssh://git@ssh.github.com:443/xiao-dudu/memex.git
 
 `create_note` 的 `content` 按 Markdown 解析（`#` 标题、`-` 列表、`- [ ]` 待办、`>` 引用、``` 代码块、`**粗体**` / `*斜体*` / `` `代码` ``），转成与编辑器同构的文档；不传 `title` 时取正文第一行。
 
+`create_task` / `update_task` 的 `description` 同样按 Markdown 解析，并同时写入 `description_json`，所以在 app 里打开描述抽屉看到的是排好版的富文本。
+
 ## 快捷键
 
 | 快捷键 | 行为 |
 | --- | --- |
-| `Ctrl+K` | 统一搜索 |
+| `Ctrl+F` | 统一搜索 |
 | `Ctrl+N` | 新建任务 / 笔记 / 周报 |
 | `Ctrl+Shift+N` | 新建笔记 |
 | `Ctrl+Shift+Space` | 打开快速捕获 |
