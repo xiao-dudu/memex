@@ -1,6 +1,6 @@
 {
   "name": "memex",
-  "version": "1.4.3",
+  "version": "1.5.0",
   "private": true,
   "packageManager": "pnpm@11.25.0",
   "engines": {
