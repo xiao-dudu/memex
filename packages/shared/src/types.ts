@@ -122,6 +122,7 @@ export interface SearchResults {
 export interface MemexSettings {
   mcpAccessMode: McpAccessMode;
   mcpTaskWrite: boolean;
+  mcpNoteWrite: boolean;
   closeToTray: boolean;
   autoLaunch: boolean;
   quickCaptureHideOnBlur: boolean;

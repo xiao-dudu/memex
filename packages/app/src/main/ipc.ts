@@ -112,6 +112,7 @@ export function registerIpcHandlers(): void {
       quickCaptureHideOnBlur: parsed.quickCaptureHideOnBlur,
       theme: parsed.theme,
       mcpTaskWrite: parsed.mcpTaskWrite,
+      mcpNoteWrite: parsed.mcpNoteWrite,
     });
     if (parsed.autoLaunch !== undefined) {
       app.setLoginItemSettings({ openAtLogin: parsed.autoLaunch });

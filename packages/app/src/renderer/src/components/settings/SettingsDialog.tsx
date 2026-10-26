@@ -44,7 +44,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
     group: 'AI',
     items: [
       { id: 'ai-service', label: 'AI 服务', icon: Sparkles, description: '配置周报生成使用的 OpenAI 兼容服务。' },
-      { id: 'ai-access', label: 'AI 访问权限', icon: ShieldCheck, description: '控制 MCP 客户端能读取哪些本地内容，以及能否修改任务。' },
+      { id: 'ai-access', label: 'AI 访问权限', icon: ShieldCheck, description: '控制 MCP 客户端能读取哪些本地内容，以及能否新建或修改。' },
     ],
   },
   {
@@ -221,8 +221,21 @@ export function SettingsDialog() {
               onChange={(checked) => void updateSettings({ mcpTaskWrite: checked })}
             />
             <p className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[12px] leading-5 text-amber-700 dark:text-amber-300">
-              开启后，AI 客户端可以通过 MCP 修改任务的状态、优先级、截止时间、标题、描述和标签。请只在你信任的客户端中开启。
+              开启后，AI 客户端可以通过 MCP 新建任务，以及修改任务的状态、优先级、截止时间、标题、描述和标签。请只在你信任的客户端中开启。
             </p>
+
+            {settings.mcpAccessMode === 'all' ? (
+              <>
+                <ToggleRow
+                  label="允许 AI 新建笔记"
+                  checked={settings.mcpNoteWrite}
+                  onChange={(checked) => void updateSettings({ mcpNoteWrite: checked })}
+                />
+                <p className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[12px] leading-5 text-amber-700 dark:text-amber-300">
+                  开启后，AI 客户端可以通过 MCP 新建笔记，内容会直接写入你的笔记库。请只在你信任的客户端中开启。
+                </p>
+              </>
+            ) : null}
 
             <div className="flex flex-wrap items-center gap-2 pt-1">
               <Button

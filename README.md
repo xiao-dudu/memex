@@ -176,7 +176,7 @@ git remote set-url github ssh://git@ssh.github.com:443/xiao-dudu/memex.git
 - 统一搜索：`Ctrl+K`，中文全文搜索
 - 快速捕获：`Ctrl+Shift+Space`，默认任务，`Ctrl+2` 切笔记
 - 本地数据：自动保存、每日备份（保留 7 份）、JSON 导出
-- MCP：只读任务工具；设置开启后可只读笔记全文
+- MCP：读取任务/笔记，设置开启后可新建任务与笔记
 - 自动更新：GitHub Releases，检查、下载、校验、安装一步完成
 
 ## MCP 配置
@@ -203,7 +203,16 @@ git remote set-url github ssh://git@ssh.github.com:443/xiao-dudu/memex.git
 - `ELECTRON_RUN_AS_NODE=1`：用 Electron 内置 Node 运行 MCP，确保与 app 使用同一套 SQLite 运行时。
 - `MEMEX_DB_PATH`：由主进程生成，保证 MCP 读取同一份数据库。
 - MCP 默认只暴露任务；在设置中切换到「任务 + 笔记」后，下一次 `tools/list` / `tools/call` 立即生效，无需重启 AI 客户端。
-- MCP 没有任何写入工具。
+- 写入默认全关：开启「允许 AI 修改任务」后暴露 `create_task` / `update_task`；切换到「任务 + 笔记」并开启「允许 AI 新建笔记」后暴露 `create_note`。
+
+| 工具 | 类型 | 需要的开关 |
+| --- | --- | --- |
+| `list_tasks` / `search_tasks` / `get_task` | 读 | 无 |
+| `create_task` / `update_task` | 写 | 允许 AI 修改任务 |
+| `list_notes` / `search_notes` / `get_note` | 读 | 任务 + 笔记 |
+| `create_note` | 写 | 任务 + 笔记 + 允许 AI 新建笔记 |
+
+`create_note` 的 `content` 按 Markdown 解析（`#` 标题、`-` 列表、`- [ ]` 待办、`>` 引用、``` 代码块、`**粗体**` / `*斜体*` / `` `代码` ``），转成与编辑器同构的文档；不传 `title` 时取正文第一行。
 
 ## 快捷键
 

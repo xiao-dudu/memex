@@ -31,7 +31,15 @@ export function readAccessMode(db: MemexDatabase): 'tasks' | 'all' {
 }
 
 export function readTaskWriteAccess(db: MemexDatabase): boolean {
-  const row = db.prepare("SELECT value FROM settings WHERE key = 'mcp_task_write'").get() as { value: string } | undefined;
+  return readBooleanSetting(db, 'mcp_task_write');
+}
+
+export function readNoteWriteAccess(db: MemexDatabase): boolean {
+  return readBooleanSetting(db, 'mcp_note_write');
+}
+
+function readBooleanSetting(db: MemexDatabase, key: string): boolean {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
   if (!row) return false;
   try {
     return JSON.parse(row.value) === true;

@@ -4,6 +4,7 @@ import type { MemexSettings } from '../types.js';
 const DEFAULTS: MemexSettings = {
   mcpAccessMode: 'tasks',
   mcpTaskWrite: false,
+  mcpNoteWrite: false,
   closeToTray: true,
   autoLaunch: false,
   quickCaptureHideOnBlur: true,
@@ -14,6 +15,7 @@ const DEFAULTS: MemexSettings = {
 const KEY_MAP: Record<keyof MemexSettings, string> = {
   mcpAccessMode: 'mcp_access_mode',
   mcpTaskWrite: 'mcp_task_write',
+  mcpNoteWrite: 'mcp_note_write',
   closeToTray: 'close_to_tray',
   autoLaunch: 'auto_launch',
   quickCaptureHideOnBlur: 'quick_capture_hide_on_blur',

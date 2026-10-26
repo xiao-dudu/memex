@@ -283,3 +283,243 @@ describe('update_task tool', () => {
     await server.close();
   });
 });
+
+describe('create_task tool', () => {
+  function enableTaskWrite() {
+    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'mcp_task_write'").run();
+  }
+
+  it('未开启任务写入时不可见且调用被拒绝', async () => {
+    const { server, client } = await connect();
+    expect((await client.listTools()).tools.map((tool) => tool.name)).not.toContain('create_task');
+
+    const denied = await client.callTool({ name: 'create_task', arguments: { title: '临时任务' } });
+    expect(denied.isError).toBe(true);
+    expect(textOf(denied)).toContain('ACCESS_DENIED');
+    await client.close();
+    await server.close();
+  });
+
+  it('创建后返回任务并可被 list_tasks 读到', async () => {
+    enableTaskWrite();
+    const { server, client } = await connect();
+    expect((await client.listTools()).tools.map((tool) => tool.name)).toContain('create_task');
+
+    const created = await client.callTool({
+      name: 'create_task',
+      arguments: {
+        title: '  写周报  ',
+        description: '汇总本周进展',
+        priority: 'high',
+        dueAt: '2030-01-01T00:00:00.000Z',
+        tags: ['工作'],
+      },
+    });
+    const payload = JSON.parse(textOf(created)) as {
+      task: { id: string; title: string; status: string; priority: string; dueAt: string; tags: string[]; createdAt: string };
+    };
+    expect(payload.task.title).toBe('写周报');
+    expect(payload.task.status).toBe('todo');
+    expect(payload.task.priority).toBe('high');
+    expect(payload.task.dueAt).toBe('2030-01-01T00:00:00.000Z');
+    expect(payload.task.tags).toEqual(['工作']);
+    expect(payload.task.createdAt).toMatch(/T.*Z$/);
+
+    const listed = JSON.parse(textOf(await client.callTool({ name: 'list_tasks', arguments: { limit: 20 } }))) as { id: string }[];
+    expect(listed.map((task) => task.id)).toContain(payload.task.id);
+    await client.close();
+    await server.close();
+  });
+
+  it('只传标题时使用默认状态与优先级', async () => {
+    enableTaskWrite();
+    const { server, client } = await connect();
+    const created = await client.callTool({ name: 'create_task', arguments: { title: '整理收件箱' } });
+    const payload = JSON.parse(textOf(created)) as { task: { status: string; priority: string; dueAt: string | null; description: string | null } };
+    expect(payload.task.status).toBe('todo');
+    expect(payload.task.priority).toBe('medium');
+    expect(payload.task.dueAt).toBeNull();
+    expect(payload.task.description).toBeNull();
+    await client.close();
+    await server.close();
+  });
+
+  it('可直接创建已完成任务并带上 completedAt', async () => {
+    enableTaskWrite();
+    const { server, client } = await connect();
+    const created = await client.callTool({ name: 'create_task', arguments: { title: '已完成的活', status: 'done' } });
+    const payload = JSON.parse(textOf(created)) as { task: { status: string; completedAt: string | null } };
+    expect(payload.task.status).toBe('done');
+    expect(payload.task.completedAt).toMatch(/T.*Z$/);
+    await client.close();
+    await server.close();
+  });
+
+  it('标题为空白时返回 INVALID_ARGUMENT 且不落库', async () => {
+    enableTaskWrite();
+    const { server, client } = await connect();
+    const result = await client.callTool({ name: 'create_task', arguments: { title: '   ' } });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain('INVALID_ARGUMENT');
+
+    const count = db.prepare('SELECT count(*) AS n FROM tasks').get() as { n: number };
+    expect(count.n).toBe(1);
+    await client.close();
+    await server.close();
+  });
+
+  it('noteId 指向不存在的笔记时返回 NOT_FOUND', async () => {
+    enableTaskWrite();
+    const { server, client } = await connect();
+    const result = await client.callTool({ name: 'create_task', arguments: { title: '关联任务', noteId: 'missing-note' } });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain('NOT_FOUND');
+    await client.close();
+    await server.close();
+  });
+
+  it('noteId 指向已软删除的笔记时返回 NOT_FOUND', async () => {
+    enableTaskWrite();
+    const { server, client } = await connect();
+    createNoteRepository(db).softDelete(noteId);
+    const result = await client.callTool({ name: 'create_task', arguments: { title: '关联任务', noteId } });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain('NOT_FOUND');
+    await client.close();
+    await server.close();
+  });
+
+  it('可关联已有笔记并返回 noteTitle', async () => {
+    enableTaskWrite();
+    const { server, client } = await connect();
+    const created = await client.callTool({ name: 'create_task', arguments: { title: '补充细节', noteId } });
+    const payload = JSON.parse(textOf(created)) as { task: { noteId: string; noteTitle: string } };
+    expect(payload.task.noteId).toBe(noteId);
+    expect(payload.task.noteTitle).toBe('项目计划细节');
+    await client.close();
+    await server.close();
+  });
+
+  it('dueAt 超出 Date 可表示范围时被拒绝', async () => {
+    enableTaskWrite();
+    const { server, client } = await connect();
+    const result = await client.callTool({ name: 'create_task', arguments: { title: '坏时间', dueAt: 9007199254740991 } });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain('INVALID_ARGUMENT');
+    await client.close();
+    await server.close();
+  });
+});
+
+describe('create_note tool', () => {
+  function enableNoteWrite() {
+    // mcp_note_write 是新键，老库里没有对应行，UPDATE 会静默命中 0 行，必须用 upsert。
+    db.prepare("INSERT OR REPLACE INTO settings(key, value) VALUES ('mcp_access_mode', '\"all\"'), ('mcp_note_write', 'true')").run();
+  }
+
+  it('只开启笔记读取时不可见且调用被拒绝', async () => {
+    db.prepare("UPDATE settings SET value = '\"all\"' WHERE key = 'mcp_access_mode'").run();
+    const { server, client } = await connect();
+    expect((await client.listTools()).tools.map((tool) => tool.name)).not.toContain('create_note');
+
+    const denied = await client.callTool({ name: 'create_note', arguments: { content: '临时笔记' } });
+    expect(denied.isError).toBe(true);
+    expect(textOf(denied)).toContain('ACCESS_DENIED');
+    await client.close();
+    await server.close();
+  });
+
+  it('笔记访问关闭时即使写入开关为真也拒绝', async () => {
+    db.prepare("INSERT OR REPLACE INTO settings(key, value) VALUES ('mcp_access_mode', '\"tasks\"'), ('mcp_note_write', 'true')").run();
+    const { server, client } = await connect();
+    expect((await client.listTools()).tools.map((tool) => tool.name)).not.toContain('create_note');
+    const denied = await client.callTool({ name: 'create_note', arguments: { content: '临时笔记' } });
+    expect(denied.isError).toBe(true);
+    expect(textOf(denied)).toContain('ACCESS_DENIED');
+    await client.close();
+    await server.close();
+  });
+
+  it('创建纯文本笔记：按行成段，标题取第一行', async () => {
+    enableNoteWrite();
+    const { server, client } = await connect();
+    const created = await client.callTool({
+      name: 'create_note',
+      arguments: { content: '项目复盘\n第一行正文\n第二行正文', tags: ['复盘'] },
+    });
+    const payload = JSON.parse(textOf(created)) as {
+      note: { id: string; title: string; plainText: string; tags: string[]; content: { content: { type: string }[] } };
+    };
+    expect(payload.note.title).toBe('项目复盘');
+    expect(payload.note.plainText).toBe('项目复盘\n第一行正文\n第二行正文');
+    expect(payload.note.tags).toEqual(['复盘']);
+    expect(payload.note.content.content.map((node) => node.type)).toEqual(['paragraph', 'paragraph', 'paragraph']);
+
+    const listed = JSON.parse(textOf(await client.callTool({ name: 'list_notes', arguments: { limit: 20 } }))) as { id: string }[];
+    expect(listed.map((note) => note.id)).toContain(payload.note.id);
+    await client.close();
+    await server.close();
+  });
+
+  it('Markdown 正文转成结构化文档，plainText 不含标记', async () => {
+    enableNoteWrite();
+    const { server, client } = await connect();
+    const created = await client.callTool({
+      name: 'create_note',
+      arguments: {
+        content: '# 周会纪要\n\n- 完成 MCP 工具\n- [x] 写测试\n\n**结论**：继续推进\n\n> 下周同步\n\n```ts\nconst a = 1;\n```',
+      },
+    });
+    const payload = JSON.parse(textOf(created)) as {
+      note: {
+        title: string;
+        plainText: string;
+        content: {
+          content: {
+            type: string;
+            attrs?: { level?: number; checked?: boolean; language?: string | null };
+            content?: { type: string; text?: string; marks?: { type: string }[]; attrs?: { checked?: boolean } }[];
+          }[];
+        };
+      };
+    };
+
+    const blocks = payload.note.content.content;
+    expect(blocks.map((node) => node.type)).toEqual(['heading', 'bulletList', 'taskList', 'paragraph', 'blockquote', 'codeBlock']);
+    expect(blocks[0]?.attrs?.level).toBe(1);
+    expect(blocks[2]?.content?.[0]?.attrs?.checked).toBe(true);
+    expect(blocks[3]?.content?.[0]?.marks?.[0]?.type).toBe('bold');
+    expect(blocks[5]?.attrs?.language).toBe('ts');
+    expect(blocks[5]?.content?.[0]?.text).toBe('const a = 1;');
+
+    expect(payload.note.title).toBe('周会纪要');
+    expect(payload.note.plainText).not.toContain('#');
+    expect(payload.note.plainText).not.toContain('**');
+    expect(payload.note.plainText).toContain('完成 MCP 工具');
+    await client.close();
+    await server.close();
+  });
+
+  it('显式标题优先于正文第一行', async () => {
+    enableNoteWrite();
+    const { server, client } = await connect();
+    const created = await client.callTool({ name: 'create_note', arguments: { content: '正文第一行', title: '自定义标题' } });
+    const payload = JSON.parse(textOf(created)) as { note: { title: string } };
+    expect(payload.note.title).toBe('自定义标题');
+    await client.close();
+    await server.close();
+  });
+
+  it('正文为空白时返回 INVALID_ARGUMENT 且不落库', async () => {
+    enableNoteWrite();
+    const { server, client } = await connect();
+    const result = await client.callTool({ name: 'create_note', arguments: { content: '   \n  ' } });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain('INVALID_ARGUMENT');
+
+    const count = db.prepare('SELECT count(*) AS n FROM notes').get() as { n: number };
+    expect(count.n).toBe(1);
+    await client.close();
+    await server.close();
+  });
+});

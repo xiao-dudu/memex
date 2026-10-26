@@ -1,5 +1,6 @@
 import { createNoteRepository, createSearchRepository, createTaskRepository } from '@memex/shared';
 import type { MemexDatabase, Note, NoteSummary, Task, TaskPatch, TaskPriority, TaskStatus } from '@memex/shared';
+import { normalizeText, textToDocument, toPlainText } from './documents.js';
 import { McpToolError } from './errors.js';
 
 /**
@@ -181,4 +182,61 @@ export function getNote(db: MemexDatabase, id: string) {
   const note = createNoteRepository(db).get(id);
   if (!note || note.deletedAt !== null) throw new McpToolError('NOT_FOUND', `笔记不存在：${id}`);
   return serializeNote(note);
+}
+
+export interface CreateTaskArgs {
+  title: string;
+  description?: string | null;
+  status?: TaskStatus;
+  priority?: TaskPriority;
+  dueAt?: string | number | null;
+  tags?: string[];
+  noteId?: string | null;
+}
+
+export function createTask(db: MemexDatabase, args: CreateTaskArgs) {
+  const title = args.title.trim();
+  if (title === '') throw new McpToolError('INVALID_ARGUMENT', '任务标题不能为空');
+
+  const noteId = args.noteId ?? null;
+  if (noteId !== null) {
+    // 外键约束报错信息对 AI 不可读，先在这里收敛成 NOT_FOUND。
+    const note = createNoteRepository(db).get(noteId);
+    if (!note || note.deletedAt !== null) throw new McpToolError('NOT_FOUND', `笔记不存在：${noteId}`);
+  }
+
+  const task = createTaskRepository(db).create({
+    title,
+    description: args.description ?? null,
+    status: args.status,
+    priority: args.priority,
+    dueAt: parseDueAt(args.dueAt) ?? null,
+    noteId,
+    tags: args.tags,
+  });
+  return { task: serializeTask(task) };
+}
+
+export interface CreateNoteArgs {
+  content: string;
+  title?: string;
+  tags?: string[];
+  isPinned?: boolean;
+}
+
+export function createNote(db: MemexDatabase, args: CreateNoteArgs) {
+  const text = normalizeText(args.content);
+  if (text.trim() === '') throw new McpToolError('INVALID_ARGUMENT', '笔记正文不能为空');
+
+  const contentJson = textToDocument(text);
+  const note = createNoteRepository(db).create({
+    contentJson,
+    // 与 app 一致：plainText 用文档渲染结果，而不是原始 Markdown，
+    // 否则摘要和全文搜索里会出现 `##`、`**` 这类标记。
+    plainText: toPlainText(JSON.parse(contentJson)),
+    title: args.title,
+    isPinned: args.isPinned,
+    tags: args.tags,
+  });
+  return { note: serializeNote(note) };
 }

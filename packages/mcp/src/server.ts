@@ -1,9 +1,11 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { readAccessMode, readTaskWriteAccess, withDatabase, withWritableDatabase } from './access.js';
+import { readAccessMode, readNoteWriteAccess, readTaskWriteAccess, withDatabase, withWritableDatabase } from './access.js';
 import { McpToolError, toErrorPayload } from './errors.js';
 import {
+  createNote,
+  createTask,
   getNote,
   getTask,
   listNotes,
@@ -34,6 +36,25 @@ const updateTaskSchema = z.object({
   tags: z.array(z.string().min(1).max(40)).optional(),
 });
 
+const tagListSchema = z.array(z.string().trim().min(1).max(40)).max(20);
+
+const createTaskSchema = z.object({
+  title: z.string().trim().min(1, '任务标题不能为空').max(200, '标题最多 200 个字符'),
+  description: z.union([z.string().max(20000), z.null()]).optional(),
+  status: statusSchema.optional(),
+  priority: prioritySchema.optional(),
+  dueAt: z.union([z.string().min(1), dueAtMillisSchema, z.null()]).optional(),
+  tags: tagListSchema.optional(),
+  noteId: z.string().min(1).optional(),
+});
+
+const createNoteSchema = z.object({
+  content: z.string().max(1_000_000, '笔记正文过长').min(1, '笔记正文不能为空'),
+  title: z.string().trim().max(200, '标题最多 200 个字符').optional(),
+  tags: tagListSchema.optional(),
+  isPinned: z.boolean().optional(),
+});
+
 const listTasksSchema = z.object({
   status: statusSchema.optional(),
   priority: prioritySchema.optional(),
@@ -54,7 +75,18 @@ const listNotesSchema = z.object({
   limit: limitSchema,
 });
 
-const TASK_TOOLS = [
+interface ToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: {
+    type: 'object';
+    properties?: Record<string, unknown>;
+    required?: string[];
+    additionalProperties?: boolean;
+  };
+}
+
+const TASK_TOOLS: ToolDefinition[] = [
   {
     name: 'list_tasks',
     description: '列出 Memex 中的任务（只读）。默认返回未完成任务，可按状态、优先级、标签和截止时间过滤。',
@@ -95,7 +127,7 @@ const TASK_TOOLS = [
   },
 ];
 
-const NOTE_TOOLS = [
+const NOTE_TOOLS: ToolDefinition[] = [
   {
     name: 'list_notes',
     description: '列出 Memex 中的笔记（只读）。需要在 Memex 设置中开启笔记访问。',
@@ -133,9 +165,28 @@ const NOTE_TOOLS = [
   },
 ];
 
-const NOTE_TOOL_NAMES = new Set(NOTE_TOOLS.map((tool) => tool.name));
+const NOTE_WRITE_TOOLS: ToolDefinition[] = [
+  {
+    name: 'create_note',
+    description:
+      '在 Memex 中新建一条笔记，返回创建后的笔记。正文支持 Markdown（# 标题、- 列表、- [ ] 待办、> 引用、``` 代码块）。需要在 Memex 设置中开启笔记访问和笔记写入。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        content: { type: 'string', description: '笔记正文，支持 Markdown' },
+        title: { type: 'string', description: '笔记标题；不传则取正文第一行' },
+        tags: { type: 'array', items: { type: 'string' }, description: '标签列表' },
+        isPinned: { type: 'boolean', description: '是否置顶' },
+      },
+      required: ['content'],
+      additionalProperties: false,
+    },
+  },
+];
 
-const TASK_WRITE_TOOLS = [
+const NOTE_TOOL_NAMES = new Set([...NOTE_TOOLS, ...NOTE_WRITE_TOOLS].map((tool) => tool.name));
+
+const TASK_WRITE_TOOLS: ToolDefinition[] = [
   {
     name: 'update_task',
     description: '更新 Memex 任务（可修改状态、优先级、截止时间、标题、描述和标签）。需要在 Memex 设置中开启任务写入。',
@@ -170,6 +221,40 @@ const TASK_WRITE_TOOLS = [
       additionalProperties: false,
     },
   },
+  {
+    name: 'create_task',
+    description: '在 Memex 中新建一条任务，返回创建后的任务。需要在 Memex 设置中开启任务写入。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: '任务标题' },
+        description: {
+          anyOf: [
+            { type: 'string', description: '任务描述' },
+            { type: 'null', description: '无描述' },
+          ],
+        },
+        status: { type: 'string', enum: ['todo', 'doing', 'done'], description: '任务状态，默认 todo' },
+        priority: { type: 'string', enum: ['low', 'medium', 'high'], description: '优先级，默认 medium' },
+        dueAt: {
+          anyOf: [
+            { type: 'string', description: 'ISO 8601 日期字符串' },
+            {
+              type: 'number',
+              minimum: -8640000000000000,
+              maximum: 8640000000000000,
+              description: '毫秒时间戳（Date 可表示范围内）',
+            },
+            { type: 'null', description: '无截止时间' },
+          ],
+        },
+        tags: { type: 'array', items: { type: 'string' }, description: '标签列表' },
+        noteId: { type: 'string', description: '关联笔记 ID（可选）' },
+      },
+      required: ['title'],
+      additionalProperties: false,
+    },
+  },
 ];
 
 export interface CreateMemexServerOptions {
@@ -184,9 +269,14 @@ export function createMemexServer({ dbPath }: CreateMemexServerOptions): Server 
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     const mode = withDatabase(dbPath, readAccessMode);
-    const canWrite = withDatabase(dbPath, readTaskWriteAccess);
-    const baseTools = mode === 'all' ? [...TASK_TOOLS, ...NOTE_TOOLS] : TASK_TOOLS;
-    return { tools: canWrite ? [...baseTools, ...TASK_WRITE_TOOLS] : baseTools };
+    const canWriteTasks = withDatabase(dbPath, readTaskWriteAccess);
+    const canWriteNotes = mode === 'all' && withDatabase(dbPath, readNoteWriteAccess);
+
+    const tools: ToolDefinition[] = [...TASK_TOOLS];
+    if (mode === 'all') tools.push(...NOTE_TOOLS);
+    if (canWriteTasks) tools.push(...TASK_WRITE_TOOLS);
+    if (canWriteNotes) tools.push(...NOTE_WRITE_TOOLS);
+    return { tools };
   });
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -234,6 +324,22 @@ export function createMemexServer({ dbPath }: CreateMemexServerOptions): Server 
             }
             const args = updateTaskSchema.parse(rawArgs);
             return withWritableDatabase(dbPath, (handle) => updateTask(handle, args));
+          }
+          case 'create_task': {
+            const canWrite = withDatabase(dbPath, readTaskWriteAccess);
+            if (!canWrite) {
+              throw new McpToolError('ACCESS_DENIED', '任务写入已关闭，请在 Memex 设置中开启');
+            }
+            const args = createTaskSchema.parse(rawArgs);
+            return withWritableDatabase(dbPath, (handle) => createTask(handle, args));
+          }
+          case 'create_note': {
+            const canWrite = withDatabase(dbPath, readNoteWriteAccess);
+            if (!canWrite) {
+              throw new McpToolError('ACCESS_DENIED', '笔记写入已关闭，请在 Memex 设置中开启');
+            }
+            const args = createNoteSchema.parse(rawArgs);
+            return withWritableDatabase(dbPath, (handle) => createNote(handle, args));
           }
           default:
             throw new McpToolError('INVALID_ARGUMENT', `未知工具：${name}`);
