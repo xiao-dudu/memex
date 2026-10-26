@@ -3,44 +3,12 @@ import { AnimatePresence, motion } from 'motion/react';
 import { Download, RefreshCw, X } from 'lucide-react';
 import type { UpdateState } from '@memex/shared';
 import { Button } from '../ui/button';
+import { ReleaseNotes } from '../ui/release-notes';
 
 export interface UpdatePromptProps {
   state: UpdateState | null;
   onDismiss: () => void;
   onSkip: (version: string) => void;
-}
-
-/** 发布说明是 markdown，这里只处理标题、列表和空行，避免整段原样吐出来 */
-function ReleaseNotes({ text }: { text: string }) {
-  const lines = text.split('\n');
-  return (
-    <div>
-      {lines.map((line, index) => {
-        const trimmed = line.trim();
-        if (!trimmed) return <div key={index} className="h-2" />;
-        if (trimmed.startsWith('#')) {
-          return (
-            <p key={index} className="mt-1 text-[12px] font-semibold text-[var(--ink)]">
-              {trimmed.replace(/^#+\s*/, '')}
-            </p>
-          );
-        }
-        if (/^[-*]\s/.test(trimmed)) {
-          return (
-            <p key={index} className="flex gap-2 py-0.5 text-[12px] leading-5 text-[var(--muted)]">
-              <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-[var(--faint)]" />
-              <span className="min-w-0">{trimmed.replace(/^[-*]\s*/, '')}</span>
-            </p>
-          );
-        }
-        return (
-          <p key={index} className="py-0.5 text-[12px] leading-5 text-[var(--muted)]">
-            {trimmed}
-          </p>
-        );
-      })}
-    </div>
-  );
 }
 
 export function UpdatePrompt({ state, onDismiss, onSkip }: UpdatePromptProps) {

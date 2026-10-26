@@ -20,6 +20,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import type { AppInfo, McpAccessMode, ThemeMode, UpdateState } from '@memex/shared';
 import { useAppStore } from '../../store/useAppStore';
 import { Button } from '../ui/button';
+import { ReleaseNotes } from '../ui/release-notes';
 import { cn } from '../ui/utils';
 import { AiServiceSettings } from './AiServiceSettings';
 
@@ -312,8 +313,8 @@ export function SettingsDialog() {
                   </div>
                 ) : null}
                 {updateState?.notes && (updateState.phase === 'available' || updateState.phase === 'up-to-date') ? (
-                  <div className="thin-scroll mt-2 max-h-28 overflow-y-auto whitespace-pre-wrap rounded-lg bg-[var(--hover)] px-3 py-2 text-[12px] leading-5 text-[var(--muted)]">
-                    {updateState.notes}
+                  <div className="thin-scroll mt-2 max-h-28 overflow-y-auto rounded-lg bg-[var(--hover)] px-3 py-2">
+                    <ReleaseNotes text={updateState.notes} />
                   </div>
                 ) : null}
               </div>
