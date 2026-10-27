@@ -117,6 +117,7 @@ test('任务计时跟随模块切换：任务页窄条，离开后撑开', async
   await composer.press('Enter');
 
   await page.getByRole('button', { name: '设置任务计时' }).click();
+  await page.getByRole('button', { name: '正计时', exact: true }).click();
   await page.getByRole('button', { name: '开始正计时' }).click();
 
   const bar = page.getByRole('button', { name: /^任务计时/ });

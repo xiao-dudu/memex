@@ -32,4 +32,30 @@ describe('wheel picker', () => {
     render(<WheelPicker value={0} onChange={() => undefined} min={0} max={23} label="小时" />);
     expect(screen.getAllByRole('option')).toHaveLength(24);
   });
+
+  it('滚轮一格只走一行，连续事件不丢步', () => {
+    const onChange = vi.fn();
+    render(<WheelPicker value={25} onChange={onChange} min={0} max={59} label="分钟" />);
+    const scroller = screen.getByRole('listbox', { name: '分钟' }).querySelector('.wheel-scroll')!;
+
+    // 原生滚动一格约 100px，行高只有 26px，若不接管会一次跳 4 行
+    fireEvent.wheel(scroller, { deltaY: 100 });
+    expect(onChange).toHaveBeenLastCalledWith(26);
+
+    // 父组件还没重渲染就又来一格，也要接着 +1 而不是原地重复
+    fireEvent.wheel(scroller, { deltaY: 100 });
+    expect(onChange).toHaveBeenLastCalledWith(27);
+
+    fireEvent.wheel(scroller, { deltaY: -100 });
+    expect(onChange).toHaveBeenLastCalledWith(26);
+  });
+
+  it('滚轮在两端不再越界', () => {
+    const onChange = vi.fn();
+    render(<WheelPicker value={59} onChange={onChange} min={0} max={59} label="分钟" />);
+    const scroller = screen.getByRole('listbox', { name: '分钟' }).querySelector('.wheel-scroll')!;
+
+    fireEvent.wheel(scroller, { deltaY: 100 });
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });

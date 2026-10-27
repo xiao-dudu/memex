@@ -56,11 +56,23 @@ describe('task timer control', () => {
   it('正计时按钮启动秒表，没有总时长', () => {
     render(<TaskTimerControl task={task} />);
     fireEvent.click(screen.getByRole('button', { name: '设置任务计时' }));
+    // 先切到正计时模式，主按钮才变成"开始正计时"
+    fireEvent.click(screen.getByRole('button', { name: '正计时' }));
     fireEvent.click(screen.getByRole('button', { name: '开始正计时' }));
 
     const timer = useAppStore.getState().timer;
     expect(timer?.mode).toBe('stopwatch');
     expect(timer?.durationMs).toBeNull();
+  });
+
+  it('切到正计时后不再显示滚轮与快选', () => {
+    render(<TaskTimerControl task={task} />);
+    fireEvent.click(screen.getByRole('button', { name: '设置任务计时' }));
+    expect(screen.queryByRole('listbox', { name: '分钟' })).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '正计时' }));
+    expect(screen.queryByRole('listbox', { name: '分钟' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '15 分钟' })).toBeNull();
   });
 
   it('计时中入口变成读数，点击可暂停', () => {
@@ -73,5 +85,13 @@ describe('task timer control', () => {
     fireEvent.click(readout);
     expect(useAppStore.getState().timer?.running).toBe(false);
     expect(screen.getByRole('button', { name: '继续计时' })).not.toBeNull();
+  });
+
+  it('读数旁边的结束按钮会清掉计时', () => {
+    useAppStore.getState().startTimer({ id: task.id, title: task.title }, 'countdown', 25 * 60_000);
+    render(<TaskTimerControl task={task} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '结束计时' }));
+    expect(useAppStore.getState().timer).toBeNull();
   });
 });

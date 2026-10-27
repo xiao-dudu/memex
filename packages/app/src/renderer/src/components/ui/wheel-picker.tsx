@@ -7,6 +7,8 @@ export interface WheelPickerProps {
   min: number;
   max: number;
   label: string;
+  /** 单位直接标在中间那行的右侧，避免单位飘在两列之间。 */
+  unit?: string;
   itemHeight?: number;
   /** 可见行数，必须是奇数，保证有一行正好落在中间。 */
   visibleCount?: number;
@@ -23,7 +25,8 @@ export function WheelPicker({
   min,
   max,
   label,
-  itemHeight = 38,
+  unit,
+  itemHeight = 26,
   visibleCount = 5,
   className,
 }: WheelPickerProps) {
@@ -33,6 +36,10 @@ export function WheelPicker({
   const settleRef = useRef<number | null>(null);
   /** 由本组件滚动触发的值变化，回灌到 props 时不要反向再滚一次。 */
   const emittedRef = useRef<number | null>(null);
+  /** 连续滚轮事件之间可能还没重渲染，用 ref 保存最新值，避免丢步。 */
+  const valueRef = useRef(value);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
   const pad = Math.floor(visibleCount / 2) * itemHeight;
 
   const items = useMemo(() => Array.from({ length: max - min + 1 }, (_, index) => min + index), [min, max]);
@@ -47,7 +54,7 @@ export function WheelPicker({
       const distance = Math.abs(delta);
       const rotate = Math.max(-72, Math.min(72, delta * -20));
       // 中间那颗明显更大更实，两侧快速衰减，接近 iOS 滚轮的层次
-      const scale = Math.max(0.6, 1.26 - distance * 0.26);
+      const scale = Math.max(0.62, 1.18 - distance * 0.24);
       const opacity = Math.max(0.18, 1 - distance * 0.3);
       node.style.transform = `rotateX(${rotate}deg) scale(${scale}) translateZ(${-distance * 6}px)`;
       node.style.opacity = String(opacity);
@@ -69,6 +76,11 @@ export function WheelPicker({
     },
     [applyTransforms, itemHeight, min],
   );
+
+  // 外部改值（或父组件确认后）同步回 ref
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
 
   // 首次渲染与外部改值时对齐位置（不用 smooth，避免打开时先滚一段）
   useLayoutEffect(() => {
@@ -105,15 +117,45 @@ export function WheelPicker({
     }, 90);
   };
 
+  /** 一次只走一行，滚轮/键盘/点击共用。 */
+  const stepBy = useCallback(
+    (delta: number) => {
+      const current = valueRef.current;
+      const next = Math.min(max, Math.max(min, current + delta));
+      if (next === current) return;
+      valueRef.current = next;
+      emittedRef.current = next;
+      onChangeRef.current(next);
+      scrollToValue(next, true);
+    },
+    [max, min, scrollToValue],
+  );
+
   const handleKeyDown = (event: React.KeyboardEvent) => {
     if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
     event.preventDefault();
-    const next = Math.min(max, Math.max(min, value + (event.key === 'ArrowDown' ? 1 : -1)));
-    if (next === value) return;
-    emittedRef.current = next;
-    onChange(next);
-    scrollToValue(next, true);
+    stepBy(event.key === 'ArrowDown' ? 1 : -1);
   };
+
+  /**
+   * 自己接管滚轮：原生滚动一格约 100px，行高只有 26px，
+   * 一格会跳将近 4 行，吸附后只能停在 4 的倍数上（1/2/3 永远选不到）。
+   * 这里一格只走一行，和 iOS 的手感一致。
+   */
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      stepBy(event.deltaY > 0 ? 1 : -1);
+    };
+
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+    // stepBy 每次都读最新的 valueRef，不需要重新绑定
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [min, max, itemHeight]);
 
   return (
     <div
@@ -132,6 +174,12 @@ export function WheelPicker({
           background: 'color-mix(in srgb, var(--line) 68%, transparent)',
         }}
       />
+      {/* 单位贴在胶囊内侧右边，跟着高亮行一起读，不再飘在两列之间 */}
+      {unit ? (
+        <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] leading-none text-[var(--faint)]">
+          {unit}
+        </span>
+      ) : null}
       <div
         ref={scrollRef}
         onScroll={handleScroll}
@@ -153,13 +201,14 @@ export function WheelPicker({
             role="option"
             aria-selected={item === value}
             onClick={() => {
+              valueRef.current = item;
               emittedRef.current = item;
               onChange(item);
               scrollToValue(item, true);
             }}
             className={cn(
-              'wheel-item flex w-full items-center justify-center text-[15px] tabular-nums transition-colors',
-              item === value ? 'font-medium text-[var(--ink)]' : 'text-[var(--muted)]',
+              'wheel-item flex w-full items-center justify-center text-[14px] tabular-nums transition-colors',
+              item === value ? 'font-semibold text-[var(--ink)]' : 'font-normal text-[var(--muted)]',
             )}
             style={{ height: itemHeight, scrollSnapAlign: 'center' }}
           >
