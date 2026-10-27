@@ -37,6 +37,7 @@ export default defineConfig({
         input: {
           index: resolve(__dirname, 'src/renderer/index.html'),
           quickCapture: resolve(__dirname, 'src/renderer/quick-capture.html'),
+          timerWidget: resolve(__dirname, 'src/renderer/timer-widget.html'),
         },
       },
     },

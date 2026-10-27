@@ -110,3 +110,55 @@ test('quick capture saves a task', async () => {
   db.close();
   expect(JSON.stringify(rows)).toContain('快速捕获的任务');
 });
+
+test('任务计时跟随模块切换：任务页窄条，离开后撑开', async () => {
+  const composer = page.getByPlaceholder('快速添加任务，回车创建');
+  await composer.fill('专注写文档');
+  await composer.press('Enter');
+
+  await page.getByRole('button', { name: '设置任务计时' }).click();
+  await page.getByRole('button', { name: '开始正计时' }).click();
+
+  const bar = page.getByRole('button', { name: /^任务计时/ });
+  await expect(bar).toBeVisible();
+  await expect(bar).not.toContainText('专注写文档');
+
+  await page.getByRole('button', { name: '笔记', exact: true }).first().click();
+  await expect(bar).toContainText('专注写文档');
+
+  await bar.click();
+  await expect(page.getByText('打开任务')).toBeVisible();
+  await page.getByRole('button', { name: '结束计时' }).click();
+  await expect(page.getByRole('button', { name: /^任务计时/ })).toHaveCount(0);
+});
+
+test('最小化时弹出桌面计时小组件，恢复后收回', async () => {
+  const composer = page.getByPlaceholder('快速添加任务，回车创建');
+  await composer.fill('桌面小组件');
+  await composer.press('Enter');
+  await page.getByRole('button', { name: '设置任务计时' }).click();
+  await page.getByRole('button', { name: '15 分钟' }).click();
+
+  const widgetVisible = () =>
+    app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows().some(
+        (window) => window.webContents.getURL().includes('timer-widget') && window.isVisible(),
+      ),
+    );
+
+  // getAllWindows 的顺序不保证主窗口在前，按 URL 找主窗口
+  const mainWindowCall = (method: 'minimize' | 'restore') =>
+    app.evaluate(({ BrowserWindow }, name) => {
+      const main = BrowserWindow.getAllWindows().find((window) => !window.webContents.getURL().includes('timer-widget'));
+      if (name === 'minimize') main?.minimize();
+      else main?.restore();
+    }, method);
+
+  await mainWindowCall('minimize');
+  await page.waitForTimeout(1200);
+  expect(await widgetVisible()).toBe(true);
+
+  await mainWindowCall('restore');
+  await page.waitForTimeout(800);
+  expect(await widgetVisible()).toBe(false);
+});

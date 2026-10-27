@@ -140,6 +140,26 @@ textarea {
   background-clip: content-box;
 }
 
+/* 滚轮选择器：隐藏滚动条，只保留"齿轮"的视觉反馈 */
+.wheel-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  overscroll-behavior: contain;
+  scroll-behavior: auto;
+  /* 上下两端淡出，接近 iOS 滚轮的观感 */
+  mask-image: linear-gradient(to bottom, transparent 0, black 20%, black 80%, transparent 100%);
+}
+
+.wheel-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.wheel-item {
+  transform-origin: center center;
+  backface-visibility: hidden;
+  will-change: transform, opacity;
+}
+
 .quick-body {
   background: transparent;
 }

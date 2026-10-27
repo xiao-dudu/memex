@@ -75,6 +75,21 @@ const api: MemexApi = {
     hideQuickCapture: () => ipcRenderer.invoke(IPC.windowHideQuickCapture),
     setTheme: (theme) => ipcRenderer.invoke(IPC.windowSetTheme, theme),
   },
+  timer: {
+    sync: (state) => ipcRenderer.send(IPC.timerSync, state),
+    getState: () => ipcRenderer.invoke(IPC.timerGetState),
+    onState: (callback) => {
+      const listener = (_event: Electron.IpcRendererEvent, state: Parameters<typeof callback>[0]) => callback(state);
+      ipcRenderer.on(IPC.timerState, listener);
+      return () => ipcRenderer.removeListener(IPC.timerState, listener);
+    },
+    sendAction: (action) => ipcRenderer.send(IPC.timerAction, action),
+    onAction: (callback) => {
+      const listener = (_event: Electron.IpcRendererEvent, action: Parameters<typeof callback>[0]) => callback(action);
+      ipcRenderer.on(IPC.timerAction, listener);
+      return () => ipcRenderer.removeListener(IPC.timerAction, listener);
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld('memex', api);

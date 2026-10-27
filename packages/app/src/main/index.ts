@@ -5,6 +5,7 @@ import { closeDatabase, getRepositories, initDatabase } from './db.js';
 import { registerIpcHandlers } from './ipc.js';
 import { maybeDailyBackup } from './data.js';
 import { createMainWindow, getMainWindow, showMainWindow } from './windows/main.js';
+import { attachTimerWidgetToWindow, registerTimerWidgetIpc } from './windows/timer-widget.js';
 import { destroyTray, createTray } from './system/tray.js';
 import { registerShortcuts, unregisterShortcuts } from './system/shortcuts.js';
 import { initUpdateService } from './updater.js';
@@ -30,6 +31,8 @@ if (!hasLock) {
     registerIpcHandlers();
 
     const window = createMainWindow();
+    registerTimerWidgetIpc();
+    attachTimerWidgetToWindow(window);
     window.on('close', (event) => {
       if (quitting) return;
       const closeToTray = getRepositories().settings.get().closeToTray;

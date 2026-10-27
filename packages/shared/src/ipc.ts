@@ -14,6 +14,8 @@ import type {
   TaskFilter,
   TaskInput,
   TaskPatch,
+  TaskTimerAction,
+  TaskTimerState,
   UpdateState,
 } from './types.js';
 import type {
@@ -99,6 +101,15 @@ export interface MemexApi {
     hideQuickCapture(): Promise<void>;
     setTheme(theme: 'system' | 'light' | 'dark'): Promise<void>;
   };
+  timer: {
+    /** 主窗口把最新计时状态推给主进程，由主进程转发给桌面小组件。 */
+    sync(state: TaskTimerState | null): void;
+    getState(): Promise<TaskTimerState | null>;
+    onState(callback: (state: TaskTimerState | null) => void): () => void;
+    /** 小组件里的操作（暂停/继续/加时/结束/打开任务）转给主窗口执行。 */
+    sendAction(action: TaskTimerAction): void;
+    onAction(callback: (action: TaskTimerAction) => void): () => void;
+  };
 }
 
 export const IPC = {
@@ -151,4 +162,8 @@ export const IPC = {
   windowShowMain: 'window:show-main',
   windowHideQuickCapture: 'window:hide-quick-capture',
   windowSetTheme: 'window:set-theme',
+  timerSync: 'timer:sync',
+  timerGetState: 'timer:get-state',
+  timerState: 'timer:state',
+  timerAction: 'timer:action',
 } as const;

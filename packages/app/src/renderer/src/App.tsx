@@ -13,6 +13,7 @@ import { ReportList } from './components/reports/ReportList';
 import { ReportWorkspace } from './components/reports/ReportWorkspace';
 import { SearchPalette } from './components/search/SearchPalette';
 import { SettingsDialog } from './components/settings/SettingsDialog';
+import { TaskTimerBar } from './components/tasks/TaskTimerBar';
 import { useAppStore } from './store/useAppStore';
 import { useReportStore } from './store/useReportStore';
 import type { UpdateState } from '@memex/shared';
@@ -100,6 +101,29 @@ export default function App() {
 
   const [updatePrompt, setUpdatePrompt] = useState<UpdateState | null>(null);
 
+  // 计时状态与主进程同步：桌面小组件窗口读的是主进程那份副本。
+  useEffect(() => {
+    window.memex.timer.sync(useAppStore.getState().timer);
+    return useAppStore.subscribe((state, previous) => {
+      if (state.timer !== previous.timer) window.memex.timer.sync(state.timer);
+    });
+  }, []);
+
+  // 小组件上的操作转回本窗口执行，状态变化会再同步回去
+  useEffect(() => {
+    return window.memex.timer.onAction((action) => {
+      const state = useAppStore.getState();
+      if (action === 'pause') state.pauseTimer();
+      else if (action === 'resume') state.resumeTimer();
+      else if (action === 'extend') state.extendTimer(5 * 60 * 1000);
+      else if (action === 'stop') state.stopTimer();
+      else if (action === 'open') {
+        const taskId = state.timer?.taskId;
+        if (taskId) void state.openTask(taskId);
+      }
+    });
+  }, []);
+
   // 启动后静默检查更新：网络异常、已是最新、用户跳过过这个版本，都保持安静
   useEffect(() => {
     if (showSplash) return;
@@ -185,6 +209,8 @@ export default function App() {
         onToggleSidebar={() => useAppStore.getState().setSidebarCollapsed(!useAppStore.getState().sidebarCollapsed)}
         onToggleDetail={() => setDetailCollapsed(!detailCollapsed)}
       />
+
+      <TaskTimerBar />
 
       <div className="flex min-h-0 flex-1">
         <Sidebar />

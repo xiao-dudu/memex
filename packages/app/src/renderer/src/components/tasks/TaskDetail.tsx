@@ -22,6 +22,7 @@ import { Select } from '../ui/select';
 import { cn } from '../ui/utils';
 import { formatDue } from '../../lib/date';
 import { TaskDescriptionDrawer } from './TaskDescriptionDrawer';
+import { TaskTimerControl } from './TaskTimerControl';
 
 const STATUS_META: { value: TaskStatus; label: string; icon: typeof Circle }[] = [
   { value: 'todo', label: '待办', icon: Circle },
@@ -152,6 +153,7 @@ export function TaskDetail() {
             <span>{task.status === 'done' ? '已完成' : task.status === 'doing' ? '进行中' : '待办'}</span>
           </div>
           <span className="flex-1" />
+          <TaskTimerControl task={task} />
           {saveState !== 'idle' ? (
             <span className="text-[12px] text-[var(--faint)]">{saveState === 'saving' ? '保存中…' : '已保存'}</span>
           ) : null}

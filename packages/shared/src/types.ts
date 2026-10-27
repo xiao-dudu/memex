@@ -134,6 +134,26 @@ export interface MemexSettings {
   lastBackupAt: number;
 }
 
+export type TaskTimerMode = 'countdown' | 'stopwatch';
+
+/**
+ * 任务计时器的状态。只活在内存里，但需要跨进程共享：
+ * 主窗口持有权威状态，桌面小组件窗口只负责显示与转发操作。
+ */
+export interface TaskTimerState {
+  taskId: string;
+  taskTitle: string;
+  mode: TaskTimerMode;
+  /** 倒计时总时长（毫秒）；正计时为 null。 */
+  durationMs: number | null;
+  startedAt: number;
+  accumulatedMs: number;
+  running: boolean;
+  finished: boolean;
+}
+
+export type TaskTimerAction = 'pause' | 'resume' | 'extend' | 'stop' | 'open';
+
 export interface AppInfo {
   version: string;
   dbPath: string;

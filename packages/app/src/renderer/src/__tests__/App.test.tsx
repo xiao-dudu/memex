@@ -10,6 +10,7 @@ beforeEach(() => {
   refreshCalls = 0;
   window.memex = {
     window: { setTheme: vi.fn().mockResolvedValue(undefined) },
+    timer: { sync: vi.fn(), onAction: () => () => undefined },
   } as unknown as MemexApi;
   useAppStore.setState({
     settings: null,

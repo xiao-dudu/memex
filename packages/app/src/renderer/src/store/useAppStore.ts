@@ -13,6 +13,7 @@ import type {
   TaskView,
 } from '@memex/shared';
 import { emptyDocument } from '../lib/tiptap';
+import { createTimer, type TaskTimerMode, type TaskTimerState } from '../lib/timer';
 
 export type AppModule = 'tasks' | 'notes' | 'reports';
 
@@ -37,6 +38,8 @@ interface AppState {
   detailCollapsed: boolean;
   searchOpen: boolean;
   settingsOpen: boolean;
+  /** 任务计时器，只活在内存里，关掉应用即失效。 */
+  timer: TaskTimerState | null;
 
   bootstrap: () => Promise<void>;
   setModule: (module: AppModule) => void;
@@ -67,6 +70,12 @@ interface AppState {
   setDetailCollapsed: (collapsed: boolean) => void;
   setSearchOpen: (open: boolean) => void;
   setSettingsOpen: (open: boolean) => void;
+  startTimer: (task: { id: string; title: string }, mode: TaskTimerMode, durationMs?: number | null) => void;
+  pauseTimer: () => void;
+  resumeTimer: () => void;
+  stopTimer: () => void;
+  extendTimer: (ms: number) => void;
+  finishTimer: () => void;
   updateSettings: (patch: Partial<MemexSettings>) => Promise<void>;
 }
 
@@ -122,6 +131,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   detailCollapsed: initialDetailCollapsed,
   searchOpen: false,
   settingsOpen: false,
+  timer: null,
 
   async bootstrap() {
     try {
@@ -352,6 +362,68 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setSettingsOpen(open) {
     set({ settingsOpen: open });
+  },
+
+  startTimer(task, mode, durationMs = null) {
+    // 同时只跑一个计时器：换任务时旧的直接作废，避免顶部出现两条计时。
+    set({ timer: createTimer(task, mode, durationMs, Date.now()) });
+  },
+
+  pauseTimer() {
+    const timer = get().timer;
+    if (!timer || !timer.running) return;
+    const now = Date.now();
+    set({
+      timer: {
+        ...timer,
+        accumulatedMs: timer.accumulatedMs + Math.max(0, now - timer.startedAt),
+        running: false,
+      },
+    });
+  },
+
+  resumeTimer() {
+    const timer = get().timer;
+    if (!timer || timer.running || timer.finished) return;
+    set({ timer: { ...timer, startedAt: Date.now(), running: true } });
+  },
+
+  stopTimer() {
+    set({ timer: null });
+  },
+
+  extendTimer(ms) {
+    const timer = get().timer;
+    if (!timer || timer.durationMs === null) return;
+    const now = Date.now();
+    if (timer.finished) {
+      // 到点后再加时：把已走的时长结清，从现在继续跑。
+      set({
+        timer: {
+          ...timer,
+          durationMs: timer.durationMs + ms,
+          accumulatedMs: timer.durationMs,
+          startedAt: now,
+          running: true,
+          finished: false,
+        },
+      });
+      return;
+    }
+    set({ timer: { ...timer, durationMs: timer.durationMs + ms } });
+  },
+
+  finishTimer() {
+    const timer = get().timer;
+    if (!timer || timer.finished || timer.durationMs === null) return;
+    set({
+      timer: {
+        ...timer,
+        accumulatedMs: timer.durationMs,
+        running: false,
+        finished: true,
+      },
+    });
   },
 
   async updateSettings(patch) {
