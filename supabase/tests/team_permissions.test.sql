@@ -74,5 +74,36 @@ select set_config('request.jwt.claims', '{"sub":"11111111-1111-4111-8111-1111111
 select is((select count(*)::int from public.team_tasks), 2, 'leader sees all tasks');
 select is((select count(*)::int from public.team_task_assignees), 2, 'leader sees all assignees');
 
+-- append before select * from finish(); in supabase/tests/team_permissions.test.sql
+select set_config('request.jwt.claims', '{"sub":"22222222-2222-4222-8222-222222222222","email":"member1@example.com"}', true);
+select lives_ok(
+  $$select public.team_start_assignee('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 1, '99999999-9999-4999-8999-999999999999')$$,
+  'member can start own item'
+);
+select lives_ok(
+  $$select public.team_add_progress_note('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '已完成初稿', '88888888-8888-4888-8888-888888888888')$$,
+  'member can add progress note'
+);
+select lives_ok(
+  $$select public.team_submit_assignee('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '请验收', 2, '77777777-7777-4777-8777-777777777777')$$,
+  'member can submit own item'
+);
+
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-4111-8111-111111111111","email":"leader@example.com"}', true);
+select lives_ok(
+  $$select public.team_review_assignee('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '22222222-2222-4222-8222-222222222222', 3, 'approve', '通过', '66666666-6666-4666-8666-666666666666')$$,
+  'authorized leader can approve'
+);
+select is(
+  (select status::text from public.team_task_assignees where task_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id = '22222222-2222-4222-8222-222222222222'),
+  'approved',
+  'assignee becomes approved'
+);
+select throws_ok(
+  $$select public.team_review_assignee('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '22222222-2222-4222-8222-222222222222', 4, 'return', null, '55555555-5555-4555-8555-555555555555')$$,
+  'P0001',
+  'INVALID_STATUS',
+  'approved item cannot be reviewed again'
+);
 select * from finish();
 rollback;
