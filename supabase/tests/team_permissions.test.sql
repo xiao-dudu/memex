@@ -692,6 +692,60 @@ select throws_ok(
   'removed approved assignee blocks reopen'
 );
 
+select lives_ok(
+  $$select public.team_set_member_role('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '33333333-3333-4333-8333-333333333333', 'leader', '16161616-1616-4616-8616-161616161601')$$,
+  'leader can promote an approver for removed-leader reopen coverage'
+);
+select lives_ok(
+  $$select public.team_create_task(
+    '16161616-1616-4616-8616-161616161602',
+    '16161616-1616-4616-8616-161616161616',
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    '已移除领导重开任务', null, null, 'medium', null, '{}',
+    array['11111111-1111-4111-8111-111111111111']::uuid[],
+    array['11111111-1111-4111-8111-111111111111','33333333-3333-4333-8333-333333333333']::uuid[]
+  )$$,
+  'leader can create a task for removed task-leader reopen coverage'
+);
+select is(
+  public.team_start_assignee('16161616-1616-4616-8616-161616161616', 1, '16161616-1616-4616-8616-161616161603'),
+  2,
+  'assignee can start the removed-leader reopen task'
+);
+select is(
+  public.team_submit_assignee('16161616-1616-4616-8616-161616161616', '提交', 2, '16161616-1616-4616-8616-161616161604'),
+  3,
+  'assignee can submit the removed-leader reopen task'
+);
+select set_config('request.jwt.claims', '{"sub":"33333333-3333-4333-8333-333333333333","email":"member2@example.com"}', true);
+select is(
+  public.team_review_assignee(
+    '16161616-1616-4616-8616-161616161616',
+    '11111111-1111-4111-8111-111111111111',
+    3,
+    'approve',
+    null,
+    '16161616-1616-4616-8616-161616161605'
+  ),
+  4,
+  'promoted leader can approve the removed-leader reopen task'
+);
+reset role;
+insert into public.team_task_leaders (task_id, team_id, user_id)
+values (
+  '16161616-1616-4616-8616-161616161616',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  '22222222-2222-4222-8222-222222222222'
+);
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-4111-8111-111111111111","email":"leader@example.com"}', true);
+select throws_ok(
+  $$select public.team_reopen_task('16161616-1616-4616-8616-161616161616', 1, '16161616-1616-4616-8616-161616161606')$$,
+  'P0001',
+  'NOT_AUTHORIZED',
+  'removed task leader blocks reopen'
+);
+
 select set_config('request.jwt.claims', '{"sub":"55555555-5555-4555-8555-555555555555","email":"creator@example.com"}', true);
 select is(
   public.team_create_team(
@@ -734,6 +788,7 @@ with defs as (
     pg_get_functiondef('public.team_archive_task(uuid,integer,uuid)'::regprocedure) as archive_task_def,
     pg_get_functiondef('public.team_close_assignee(uuid,uuid,text,integer,uuid)'::regprocedure) as close_assignee_def,
     pg_get_functiondef('public.team_create_invite(uuid,text,bigint,uuid)'::regprocedure) as create_invite_def,
+    pg_get_functiondef('public.team_accept_invite(text,text,uuid)'::regprocedure) as accept_invite_def,
     pg_get_functiondef('public.team_revoke_invite(uuid,uuid)'::regprocedure) as revoke_invite_def
 )
 select ok(
@@ -767,6 +822,12 @@ select ok(
   and position(lock_marker in create_invite_def) > 0
   and position(lock_marker in create_invite_def) < position('perform public.assert_team_leader' in create_invite_def)
   and position(lock_marker in create_invite_def) < position('insert into public.team_invites' in create_invite_def)
+  and position('select team_id into v_team_id' in accept_invite_def) > 0
+  and position('select team_id into v_team_id' in accept_invite_def) < position(lock_marker in accept_invite_def)
+  and position(lock_marker in accept_invite_def) > 0
+  and position(lock_marker in accept_invite_def) < position('select * into v_invite' in accept_invite_def)
+  and position('for update' in substring(accept_invite_def from position('select * into v_invite' in accept_invite_def))) > 0
+  and position(lock_marker in accept_invite_def) < position('if exists (' in accept_invite_def)
   and position(lock_marker in revoke_invite_def) > 0
   and position(lock_marker in revoke_invite_def) < position('perform public.assert_team_leader' in revoke_invite_def)
   and position('from public.team_invites' in substring(revoke_invite_def from position(lock_marker in revoke_invite_def))) > 0,

@@ -96,12 +96,27 @@ declare
   v_invite public.team_invites%rowtype;
   v_email text := lower(coalesce(auth.jwt() ->> 'email', ''));
   v_result jsonb;
+  v_team_id uuid;
 begin
   v_result := public.operation_result(p_operation_id, 'accept_invite');
   if v_result is not null then
     return (v_result #>> '{}')::uuid;
   end if;
   if auth.uid() is null then raise exception 'NOT_AUTHORIZED'; end if;
+
+  select team_id into v_team_id
+  from public.team_invites
+  where token_hash = extensions.digest(p_token, 'sha256')
+  limit 1;
+  if v_team_id is null then
+    v_result := public.operation_result(p_operation_id, 'accept_invite');
+    if v_result is not null then
+      return (v_result #>> '{}')::uuid;
+    end if;
+    raise exception 'INVITE_INVALID';
+  end if;
+
+  perform 1 from public.teams where id = v_team_id for update;
 
   select * into v_invite
   from public.team_invites
