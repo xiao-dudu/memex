@@ -16,9 +16,8 @@ export function hasNonAssigneeApprover(assigneeIds: string[], leaderIds: string[
   return [...new Set([creatorId, ...leaderIds])].some((id) => !assignees.has(id));
 }
 
-export function canApproveAssignee(task: TeamTask, actorId: string, activeLeaderIds: string[]): boolean {
-  const assignee = task.assignees.find((item) => item.id === actorId);
-  if (assignee) return false;
+export function canApproveAssignee(task: TeamTask, actorId: string, assigneeId: string, activeLeaderIds: string[]): boolean {
+  if (actorId === assigneeId) return false;
   const active = new Set(activeLeaderIds);
   if (!active.has(actorId)) return false;
   return task.createdBy === actorId || task.leaders.some((leader) => leader.id === actorId);

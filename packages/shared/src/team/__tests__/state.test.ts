@@ -64,18 +64,44 @@ describe('team task state', () => {
     ).toBe('ended_with_closed');
   });
 
+  it('marks archived tasks as archived regardless of assignee status', () => {
+    expect(
+      deriveTeamTaskState(
+        task({
+          archivedAt: 2,
+          assignees: [{ ...task().assignees[0]!, status: 'approved' }],
+        }),
+      ),
+    ).toBe('archived');
+  });
+
   it('lets the creator or task leader approve another person', () => {
     const value = task();
-    expect(canApproveAssignee(value, 'leader-creator', ['leader-creator', 'leader-2'])).toBe(true);
-    expect(canApproveAssignee(value, 'leader-2', ['leader-creator', 'leader-2'])).toBe(true);
-    expect(canApproveAssignee(value, 'member-1', ['leader-creator', 'leader-2'])).toBe(false);
+    expect(canApproveAssignee(value, 'leader-creator', 'member-1', ['leader-creator', 'leader-2'])).toBe(true);
+    expect(canApproveAssignee(value, 'leader-2', 'member-1', ['leader-creator', 'leader-2'])).toBe(true);
+    expect(canApproveAssignee(value, 'member-1', 'member-1', ['leader-creator', 'leader-2'])).toBe(false);
   });
 
   it('never lets a leader approve their own assignee item', () => {
     const value = task({
       assignees: [{ ...task().assignees[0]!, id: 'leader-2' }],
     });
-    expect(canApproveAssignee(value, 'leader-2', ['leader-creator', 'leader-2'])).toBe(false);
+    expect(canApproveAssignee(value, 'leader-2', 'leader-2', ['leader-creator', 'leader-2'])).toBe(false);
+  });
+
+  it('lets a leader assigned to one item approve another assignee item', () => {
+    const base = task().assignees[0]!;
+    const value = task({
+      assignees: [
+        { ...base, id: 'leader-2', email: 'leader2@example.com', displayName: '领导二' },
+        { ...base, id: 'member-1' },
+      ],
+    });
+    expect(canApproveAssignee(value, 'leader-2', 'member-1', ['leader-creator', 'leader-2'])).toBe(true);
+  });
+
+  it('rejects an inactive leader', () => {
+    expect(canApproveAssignee(task(), 'leader-2', 'member-1', ['leader-creator'])).toBe(false);
   });
 
   it('requires at least one approver outside the assignee list', () => {

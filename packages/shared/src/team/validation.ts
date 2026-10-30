@@ -41,7 +41,7 @@ export const teamTaskCreateSchema = z.object({
 
 export const teamTaskUpdateSchema = teamTaskCreateSchema.partial().extend({
   expectedVersion: z.number().int().positive(),
-}).refine((value) => Object.keys(value).length > 0, { message: '至少提供一个字段' });
+}).refine((value) => Object.keys(value).some((key) => key !== 'expectedVersion'), { message: '至少提供一个字段' });
 
 export const teamTaskFilterSchema = z.object({
   view: z.enum(['all', 'mine', 'pending_review', 'overdue', 'archived']).optional(),
