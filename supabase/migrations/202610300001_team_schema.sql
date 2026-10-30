@@ -50,6 +50,7 @@ create unique index team_members_one_active_team
 create table public.team_tasks (
   id uuid primary key,
   team_id uuid not null references public.teams(id) on delete cascade,
+  unique (id, team_id),
   title text not null check (char_length(title) between 1 and 200),
   description text,
   description_json text,
@@ -67,6 +68,7 @@ create table public.team_tasks (
 create table public.team_task_leaders (
   task_id uuid not null references public.team_tasks(id) on delete cascade,
   team_id uuid not null references public.teams(id) on delete cascade,
+  foreign key (task_id, team_id) references public.team_tasks(id, team_id) on delete cascade,
   user_id uuid not null references auth.users(id),
   sync_version bigint not null default nextval('public.team_sync_seq'),
   primary key (task_id, user_id)
@@ -75,6 +77,7 @@ create table public.team_task_leaders (
 create table public.team_task_assignees (
   task_id uuid not null references public.team_tasks(id) on delete cascade,
   team_id uuid not null references public.teams(id) on delete cascade,
+  foreign key (task_id, team_id) references public.team_tasks(id, team_id) on delete cascade,
   user_id uuid not null references auth.users(id),
   status public.team_assignee_status not null default 'todo',
   approved_by uuid references auth.users(id),
@@ -91,6 +94,7 @@ create table public.team_task_progress_notes (
   id uuid primary key default gen_random_uuid(),
   task_id uuid not null references public.team_tasks(id) on delete cascade,
   team_id uuid not null references public.teams(id) on delete cascade,
+  foreign key (task_id, team_id) references public.team_tasks(id, team_id) on delete cascade,
   user_id uuid not null references auth.users(id),
   body text not null check (char_length(body) between 1 and 20000),
   created_at bigint not null default public.epoch_ms(),
@@ -101,6 +105,7 @@ create table public.team_task_events (
   id uuid primary key default gen_random_uuid(),
   task_id uuid not null references public.team_tasks(id) on delete cascade,
   team_id uuid not null references public.teams(id) on delete cascade,
+  foreign key (task_id, team_id) references public.team_tasks(id, team_id) on delete cascade,
   actor_id uuid not null references auth.users(id),
   event_type public.team_event_type not null,
   target_user_id uuid references auth.users(id),
@@ -211,6 +216,12 @@ as $$
           join public.team_task_assignees target on target.task_id = mine.task_id
           where mine.team_id = p_team_id and mine.user_id = auth.uid() and target.user_id = p_member_id
         )
+        or exists (
+          select 1
+          from public.team_task_assignees mine
+          join public.team_task_leaders target on target.task_id = mine.task_id
+          where mine.team_id = p_team_id and mine.user_id = auth.uid() and target.user_id = p_member_id
+        )
       )
   );
 $$;
@@ -256,6 +267,8 @@ begin
 end;
 $$;
 
+revoke execute on function public.claim_operation(uuid, uuid) from public, anon, authenticated;
+
 alter table public.teams enable row level security;
 alter table public.team_members enable row level security;
 alter table public.team_tasks enable row level security;
@@ -277,7 +290,7 @@ create policy task_events_select on public.team_task_events for select using (pu
 create policy notifications_select on public.team_notifications for select using (user_id = auth.uid());
 create policy invites_select on public.team_invites for select using (public.is_team_leader(team_id));
 
-revoke insert, update, delete on public.teams, public.team_members, public.team_tasks,
+revoke all on public.teams, public.team_members, public.team_tasks,
   public.team_task_leaders, public.team_task_assignees, public.team_task_progress_notes,
   public.team_task_events, public.team_notifications, public.team_invites, public.team_operations
   from anon, authenticated;
