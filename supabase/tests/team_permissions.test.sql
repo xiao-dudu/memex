@@ -8,7 +8,10 @@ values
   ('11111111-1111-4111-8111-111111111111', 'authenticated', 'authenticated', 'leader@example.com', crypt('password', gen_salt('bf')), now(), now(), now()),
   ('22222222-2222-4222-8222-222222222222', 'authenticated', 'authenticated', 'member1@example.com', crypt('password', gen_salt('bf')), now(), now(), now()),
   ('33333333-3333-4333-8333-333333333333', 'authenticated', 'authenticated', 'member2@example.com', crypt('password', gen_salt('bf')), now(), now(), now()),
-  ('44444444-4444-4444-8444-444444444444', 'authenticated', 'authenticated', 'leader2@example.com', crypt('password', gen_salt('bf')), now(), now(), now());
+  ('44444444-4444-4444-8444-444444444444', 'authenticated', 'authenticated', 'leader2@example.com', crypt('password', gen_salt('bf')), now(), now(), now()),
+  ('55555555-5555-4555-8555-555555555555', 'authenticated', 'authenticated', 'creator@example.com', crypt('password', gen_salt('bf')), now(), now(), now()),
+  ('66666666-6666-4666-8666-666666666666', 'authenticated', 'authenticated', 'invitee@example.com', crypt('password', gen_salt('bf')), now(), now(), now()),
+  ('77777777-7777-4777-8777-777777777777', 'authenticated', 'authenticated', 'tasklead@example.com', crypt('password', gen_salt('bf')), now(), now(), now());
 
 insert into public.teams (id, name, created_by)
 values
@@ -20,7 +23,8 @@ values
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111', 'leader', 'leader@example.com', '领导'),
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '22222222-2222-4222-8222-222222222222', 'member', 'member1@example.com', '成员一'),
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '33333333-3333-4333-8333-333333333333', 'member', 'member2@example.com', '成员二'),
-  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '44444444-4444-4444-8444-444444444444', 'leader', 'leader2@example.com', '领导二');
+  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '44444444-4444-4444-8444-444444444444', 'leader', 'leader2@example.com', '领导二'),
+  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '77777777-7777-4777-8777-777777777777', 'member', 'tasklead@example.com', '任务领导');
 
 select throws_ok(
   $$insert into public.team_members (team_id, user_id, role, email, display_name)
@@ -327,5 +331,228 @@ select is(
   'todo',
   'new assignee is added after all-closed reopen'
 );
+-- member-management assertions
+select set_config('request.jwt.claims', '{"sub":"33333333-3333-4333-8333-333333333333","email":"member2@example.com"}', true);
+select throws_ok(
+  $$select public.team_set_member_role('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '33333333-3333-4333-8333-333333333333', 'leader', '44444444-4444-4444-8444-444444444444')$$,
+  'P0001',
+  'NOT_AUTHORIZED',
+  'member cannot promote themselves'
+);
+
+select set_config('request.jwt.claims', '{"sub":"44444444-4444-4444-8444-444444444444","email":"leader2@example.com"}', true);
+select is(
+  length(set_config(
+    'test.invite_token',
+    public.team_create_invite(
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'invitee@example.com',
+      (extract(epoch from now()) * 1000)::bigint + 86400000,
+      '44444444-4444-4444-8444-444444444450'
+    ),
+    true
+  )),
+  64,
+  'leader can create an invite and receives a 256-bit token'
+);
+select is(
+  encode((
+    select token_hash from public.team_invites
+    where team_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+      and email = 'invitee@example.com'
+    order by created_at desc
+    limit 1
+  ), 'hex'),
+  encode(digest(current_setting('test.invite_token'), 'sha256'), 'hex'),
+  'invite stores only the SHA-256 token hash'
+);
+
+select set_config('request.jwt.claims', '{"sub":"66666666-6666-4666-8666-666666666666","email":"invitee@example.com"}', true);
+select is(
+  public.team_accept_invite(
+    current_setting('test.invite_token'),
+    '邀请成员',
+    '66666666-6666-4666-8666-666666666661'
+  ),
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid,
+  'invitee can accept a valid invite'
+);
+select is(
+  public.team_accept_invite(
+    current_setting('test.invite_token'),
+    '邀请成员',
+    '66666666-6666-4666-8666-666666666661'
+  ),
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid,
+  'duplicate accept operation returns the stored team id'
+);
+
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-4111-8111-111111111111","email":"leader@example.com"}', true);
+select is(
+  (select accepted_at is not null from public.team_invites
+   where team_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+     and email = 'invitee@example.com'
+   order by created_at desc limit 1),
+  true,
+  'accepted invite is marked accepted'
+);
+select set_config('request.jwt.claims', '{"sub":"33333333-3333-4333-8333-333333333333","email":"member2@example.com"}', true);
+select throws_ok(
+  $$select public.team_create_invite('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'blocked@example.com', (extract(epoch from now()) * 1000)::bigint + 86400000, '11111111-1111-4111-8111-111111111111')$$,
+  'P0001',
+  'NOT_AUTHORIZED',
+  'member cannot create an invite'
+);
+
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-4111-8111-111111111111","email":"leader@example.com"}', true);
+select is(
+  length(set_config(
+    'test.revoke_token',
+    public.team_create_invite(
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'revoke@example.com',
+      (extract(epoch from now()) * 1000)::bigint + 86400000,
+      '11111111-1111-4111-8111-111111111112'
+    ),
+    true
+  )),
+  64,
+  'leader can create an invite to revoke'
+);
+select set_config(
+  'test.revoke_invite_id',
+  (
+    select id::text from public.team_invites
+    where team_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+      and email = 'revoke@example.com'
+    order by created_at desc limit 1
+  ),
+  true
+);
+select lives_ok(
+  $$select public.team_revoke_invite(current_setting('test.revoke_invite_id')::uuid, '44444444-4444-4444-8444-444444444451')$$,
+  'leader can revoke an invite'
+);
+select is(
+  (select revoked_at is not null from public.team_invites
+   where id = current_setting('test.revoke_invite_id')::uuid),
+  true,
+  'revoked invite is marked revoked'
+);
+select lives_ok(
+  $$select public.team_revoke_invite(current_setting('test.revoke_invite_id')::uuid, '44444444-4444-4444-8444-444444444451')$$,
+  'duplicate revoke operation is idempotent'
+);
+
+select lives_ok(
+  $$select public.team_set_member_role('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '33333333-3333-4333-8333-333333333333', 'leader', '44444444-4444-4444-8444-444444444447')$$,
+  'leader can promote a member'
+);
+select is(
+  (select role::text from public.team_members
+   where team_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+     and user_id = '33333333-3333-4333-8333-333333333333'),
+  'leader',
+  'member becomes leader'
+);
+select lives_ok(
+  $$select public.team_set_member_role('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '33333333-3333-4333-8333-333333333333', 'member', '44444444-4444-4444-8444-444444444448')$$,
+  'leader can demote another leader'
+);
+select is(
+  (select role::text from public.team_members
+   where team_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+     and user_id = '33333333-3333-4333-8333-333333333333'),
+  'member',
+  'leader becomes member'
+);
+select lives_ok(
+  $$select public.team_set_member_role('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '44444444-4444-4444-8444-444444444444', 'member', '44444444-4444-4444-8444-444444444449')$$,
+  'another leader can demote a leader'
+);
+select is(
+  (select role::text from public.team_members
+   where team_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+     and user_id = '44444444-4444-4444-8444-444444444444'),
+  'member',
+  'second leader becomes member'
+);
+select throws_ok(
+  $$select public.team_set_member_role('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111', 'member', '44444444-4444-4444-8444-444444444445')$$,
+  'P0001',
+  'LAST_LEADER',
+  'last leader cannot be demoted'
+);
+select throws_ok(
+  $$select public.team_remove_member('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111', '44444444-4444-4444-8444-444444444446')$$,
+  'P0001',
+  'LAST_LEADER',
+  'last leader cannot be removed'
+);
+select throws_ok(
+  $$select public.team_remove_member('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '33333333-3333-4333-8333-333333333333', '44444444-4444-4444-8444-444444444452')$$,
+  'P0001',
+  'UNFINISHED_ASSIGNMENTS',
+  'member with unfinished assignments cannot be removed'
+);
+
+reset role;
+insert into public.team_tasks (id, team_id, title, created_by)
+values ('13131313-1313-4313-8313-131313131313', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '领导任务', '77777777-7777-4777-8777-777777777777');
+insert into public.team_task_leaders (task_id, team_id, user_id)
+values ('13131313-1313-4313-8313-131313131313', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '77777777-7777-4777-8777-777777777777');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-4111-8111-111111111111","email":"leader@example.com"}', true);
+select throws_ok(
+  $$select public.team_remove_member('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '77777777-7777-4777-8777-777777777777', '44444444-4444-4444-8444-444444444453')$$,
+  'P0001',
+  'TASK_LEADERSHIP_NOT_TRANSFERRED',
+  'member with active task leadership cannot be removed'
+);
+
+select lives_ok(
+  $$select public.team_remove_member('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '66666666-6666-4666-8666-666666666666', '44444444-4444-4444-8444-444444444454')$$,
+  'leader can remove a member without unfinished work'
+);
+select is(
+  (select status from public.team_members
+   where team_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+     and user_id = '66666666-6666-4666-8666-666666666666'),
+  'removed',
+  'removed member is marked removed'
+);
+select lives_ok(
+  $$select public.team_remove_member('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '66666666-6666-4666-8666-666666666666', '44444444-4444-4444-8444-444444444454')$$,
+  'duplicate remove operation is idempotent'
+);
+
+select set_config('request.jwt.claims', '{"sub":"55555555-5555-4555-8555-555555555555","email":"creator@example.com"}', true);
+select is(
+  public.team_create_team(
+    'f0000000-0000-4000-8000-000000000001',
+    '创建团队',
+    '创建者',
+    '55555555-5555-4555-8555-555555555551'
+  ),
+  'f0000000-0000-4000-8000-000000000001'::uuid,
+  'user can create their first team'
+);
+select is(
+  public.team_create_team(
+    'f0000000-0000-4000-8000-000000000001',
+    '创建团队',
+    '创建者',
+    '55555555-5555-4555-8555-555555555551'
+  ),
+  'f0000000-0000-4000-8000-000000000001'::uuid,
+  'duplicate create-team operation returns the stored team id'
+);
+select throws_ok(
+  $$select public.team_create_team('f0000000-0000-4000-8000-000000000002', '第二团队', '创建者', '55555555-5555-4555-8555-555555555552')$$,
+  'P0001',
+  'ALREADY_IN_TEAM',
+  'user cannot create a second active team'
+);
+
 select * from finish();
 rollback;
