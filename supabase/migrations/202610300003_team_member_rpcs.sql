@@ -44,6 +44,10 @@ begin
   where id = p_operation_id;
   return p_team_id;
 exception when unique_violation then
+  v_result := public.operation_result(p_operation_id, 'create_team');
+  if v_result is not null then
+    return (v_result #>> '{}')::uuid;
+  end if;
   raise exception 'ALREADY_IN_TEAM';
 end;
 $$;
@@ -96,7 +100,13 @@ begin
     and revoked_at is null
     and expires_at > public.epoch_ms()
   for update;
-  if v_invite.id is null then raise exception 'INVITE_INVALID'; end if;
+  if v_invite.id is null then
+    v_result := public.operation_result(p_operation_id, 'accept_invite');
+    if v_result is not null then
+      return (v_result #>> '{}')::uuid;
+    end if;
+    raise exception 'INVITE_INVALID';
+  end if;
   if lower(v_invite.email) <> v_email then raise exception 'INVITE_EMAIL_MISMATCH'; end if;
 
   if not public.claim_operation(p_operation_id, v_invite.team_id, 'accept_invite') then
@@ -160,7 +170,18 @@ begin
     and accepted_at is null
     and revoked_at is null
   for update;
-  if v_team_id is null then raise exception 'NOT_AUTHORIZED'; end if;
+  if v_team_id is null then
+    if exists (
+      select 1 from public.team_operations
+      where id = p_operation_id
+        and user_id = auth.uid()
+        and operation_type = 'revoke_invite'
+        and team_id = (select team_id from public.team_invites where id = p_invite_id)
+    ) then
+      return;
+    end if;
+    raise exception 'NOT_AUTHORIZED';
+  end if;
 
   perform public.assert_team_leader(v_team_id);
   if not public.claim_operation(p_operation_id, v_team_id, 'revoke_invite') then return; end if;
@@ -242,7 +263,18 @@ begin
   select role into v_role
   from public.team_members
   where team_id = p_team_id and user_id = p_user_id and status = 'active';
-  if v_role is null then raise exception 'NOT_AUTHORIZED'; end if;
+  if v_role is null then
+    if exists (
+      select 1 from public.team_operations
+      where id = p_operation_id
+        and user_id = auth.uid()
+        and operation_type = 'remove_member'
+        and team_id = p_team_id
+    ) then
+      return;
+    end if;
+    raise exception 'NOT_AUTHORIZED';
+  end if;
 
   if v_role = 'leader' then
     select count(*) into v_leader_count
