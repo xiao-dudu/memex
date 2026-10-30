@@ -62,6 +62,12 @@ interface SyncOptions {
   now: () => number;
 }
 
+function readCursor(cache: TeamCache): number {
+  const cursor = Number(cache.getMeta('cursor') ?? '0');
+  if (!Number.isFinite(cursor) || cursor < 0) throw new Error('INVALID_CURSOR');
+  return cursor;
+}
+
 type OutboxPayload = {
   task?: TeamTask;
   taskId?: string;
@@ -155,17 +161,12 @@ export function createTeamSync({ api, cache, isOnline, now }: SyncOptions): Team
           }
         }
 
-        const cursor = Number(cache.getMeta('cursor') ?? '0');
+        const cursor = readCursor(cache);
         const changes = await api.pullChanges(teamId, cursor);
-        cache.replaceMembers(changes.members);
-        if (changes.team) cache.setTeam(changes.team);
-        for (const note of changes.notes) cache.appendNote(note);
-        for (const event of changes.events) cache.appendEvent(event);
-        for (const task of changes.tasks) cache.upsertTask(task);
-        for (const notification of changes.notifications) cache.upsertNotification(notification);
-        cache.setMeta('cursor', String(changes.cursor));
-        cache.setMeta('lastSyncedAt', String(now()));
-        return { phase: 'idle', pendingCount: cache.countOutbox(), lastSyncedAt: now(), message: null };
+        const syncedAt = now();
+        cache.mergeChanges(changes, changes.cursor);
+        cache.setMeta('lastSyncedAt', String(syncedAt));
+        return { phase: 'idle', pendingCount: cache.countOutbox(), lastSyncedAt: syncedAt, message: null };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         return { phase: 'error', pendingCount: cache.countOutbox(), lastSyncedAt: null, message };

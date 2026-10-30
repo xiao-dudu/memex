@@ -3,8 +3,9 @@ import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { TeamMember, TeamTask } from '@memex/shared';
+import type { TeamMember, TeamProgressNote, TeamTask, TeamTaskEvent } from '@memex/shared';
 import { clearTeamCache, openTeamCache } from '../team-cache.js';
+import type { TeamChangeSet } from '../team-sync.js';
 
 const teamId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
@@ -47,6 +48,36 @@ function member(): TeamMember {
   };
 }
 
+function note(): TeamProgressNote {
+  return { id: 'note-1', taskId: task().id, userId: 'member-1', body: '进度', createdAt: 10 };
+}
+
+function event(): TeamTaskEvent {
+  return {
+    id: 'event-1',
+    taskId: task().id,
+    actorId: 'member-1',
+    type: 'started',
+    targetUserId: 'member-1',
+    fromStatus: 'todo',
+    toStatus: 'doing',
+    createdAt: 11,
+  };
+}
+
+function changes(overrides: Partial<TeamChangeSet> = {}): TeamChangeSet {
+  return {
+    team: { id: teamId, name: '测试团队' },
+    members: [member()],
+    tasks: [task()],
+    notes: [note()],
+    events: [event()],
+    notifications: [],
+    cursor: 6,
+    ...overrides,
+  };
+}
+
 describe('team cache', () => {
   it('hydrates tasks and enforces member visibility', () => {
     const cache = openTeamCache(cachePath());
@@ -72,7 +103,9 @@ describe('team cache', () => {
     expect(cache.listPending()).toEqual([expect.objectContaining({ id: 'op-1', type: 'start_assignee', status: 'pending' })]);
     expect(cache.countOutbox()).toBe(1);
     cache.markPending('op-1', 'failed', 'offline');
-    expect(cache.listPending()).toEqual([]);
+    expect(cache.listPending()).toEqual([
+      expect.objectContaining({ id: 'op-1', status: 'failed', lastError: 'offline' }),
+    ]);
     expect(cache.countOutbox()).toBe(1);
     cache.markPending('op-1', 'pending', null);
     expect(cache.listPending()).toEqual([
@@ -136,6 +169,68 @@ describe('team cache', () => {
         createdAt: 21,
       },
     ]);
+    cache.close();
+  });
+
+  it('replays note and event IDs idempotently', () => {
+    const cache = openTeamCache(cachePath());
+    const progress = note();
+    const taskEvent = event();
+
+    cache.appendNote(progress);
+    cache.appendNote(progress);
+    cache.appendEvent(taskEvent);
+    cache.appendEvent(taskEvent);
+
+    expect(cache.listNotes(progress.taskId)).toEqual([progress]);
+    expect(cache.listEvents(taskEvent.taskId)).toEqual([taskEvent]);
+    cache.close();
+  });
+
+  it('merges changes and cursor atomically', () => {
+    const cache = openTeamCache(cachePath());
+    cache.setMeta('cursor', '4');
+    cache.mergeChanges(changes({ cursor: 5 }), 5);
+
+    expect(cache.getMeta('cursor')).toBe('5');
+    expect(cache.getTeam()).toEqual({ id: teamId, name: '测试团队' });
+    expect(cache.listMembers()).toEqual([member()]);
+    expect(cache.listNotes(task().id)).toEqual([note()]);
+    expect(cache.listEvents(task().id)).toEqual([event()]);
+
+    const invalidTask = { ...task(), id: '33333333-3333-4333-8333-333333333333', title: null as unknown as string };
+    expect(() => cache.mergeChanges({
+      team: { id: teamId, name: '不应写入' },
+      members: [{ ...member(), displayName: '不应写入' }],
+      tasks: [invalidTask],
+      notes: [{ ...note(), id: 'note-atomic' }],
+      events: [{ ...event(), id: 'event-atomic' }],
+      notifications: [],
+      cursor: 6,
+    }, 6)).toThrow();
+
+    expect(cache.getMeta('cursor')).toBe('5');
+    expect(cache.getTeam()).toEqual({ id: teamId, name: '测试团队' });
+    expect(cache.listMembers()).toEqual([member()]);
+    expect(cache.listNotes(task().id)).toEqual([note()]);
+    expect(cache.listEvents(task().id)).toEqual([event()]);
+    cache.close();
+  });
+
+  it('rejects invalid and regressing cursors before writing', () => {
+    const cache = openTeamCache(cachePath());
+    cache.setMeta('cursor', '5');
+
+    for (const cursor of [Number.NaN, Number.POSITIVE_INFINITY, -1]) {
+      expect(() => cache.mergeChanges(changes({ cursor: 6 }), cursor)).toThrow('INVALID_CURSOR');
+    }
+    expect(() => cache.mergeChanges(changes({ cursor: 6 }), 4)).toThrow('CURSOR_REGRESSION');
+
+    expect(cache.getMeta('cursor')).toBe('5');
+    expect(cache.getTeam()).toBeNull();
+    expect(cache.listMembers()).toEqual([]);
+    expect(cache.listNotes(task().id)).toEqual([]);
+    expect(cache.listEvents(task().id)).toEqual([]);
     cache.close();
   });
 

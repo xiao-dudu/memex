@@ -12,6 +12,7 @@ import {
   type TeamTaskEvent,
   type TeamTaskFilter,
 } from '@memex/shared';
+import type { TeamChangeSet } from './team-sync.js';
 
 export type OutboxStatus = 'pending' | 'done' | 'failed';
 
@@ -85,6 +86,7 @@ export interface TeamCache {
   enqueue(type: string, payload: unknown, id: string, createdAt: number): void;
   listPending(): OutboxRow[];
   countOutbox(): number;
+  mergeChanges(changes: TeamChangeSet, cursor: number): void;
   markPending(id: string, status: OutboxStatus, lastError: string | null): void;
   clear(): void;
   close(): void;
@@ -156,7 +158,7 @@ function createTeamCache(db: MemexDatabase): TeamCache {
     };
   };
 
-  return {
+  const cache: TeamCache = {
     setMeta(key, value) {
       db.prepare('INSERT INTO team_meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
         .run(key, value);
@@ -289,8 +291,11 @@ function createTeamCache(db: MemexDatabase): TeamCache {
     },
 
     appendNote(note) {
-      db.prepare('INSERT INTO team_notes(id, task_id, user_id, body, created_at) VALUES (?, ?, ?, ?, ?)')
-        .run(note.id, note.taskId, note.userId, note.body, note.createdAt);
+      db.prepare(`
+        INSERT INTO team_notes(id, task_id, user_id, body, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO NOTHING
+      `).run(note.id, note.taskId, note.userId, note.body, note.createdAt);
     },
 
     listNotes(taskId) {
@@ -308,6 +313,7 @@ function createTeamCache(db: MemexDatabase): TeamCache {
       db.prepare(`
         INSERT INTO team_events(id, task_id, actor_id, type, target_user_id, from_status, to_status, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO NOTHING
       `).run(
         event.id,
         event.taskId,
@@ -374,7 +380,7 @@ function createTeamCache(db: MemexDatabase): TeamCache {
     },
 
     listPending() {
-      return (db.prepare("SELECT * FROM team_outbox WHERE status = 'pending' ORDER BY created_at, id")
+      return (db.prepare("SELECT * FROM team_outbox WHERE status IN ('pending', 'failed') ORDER BY created_at, id")
         .all() as Record<string, unknown>[])
         .map((row) => ({
           id: String(row.id),
@@ -420,5 +426,25 @@ function createTeamCache(db: MemexDatabase): TeamCache {
     close() {
       db.close();
     },
+
+    mergeChanges(changes, cursor) {
+      if (!Number.isFinite(cursor) || cursor < 0) throw new Error('INVALID_CURSOR');
+
+      const apply = db.transaction(() => {
+        const current = Number(cache.getMeta('cursor') ?? '0');
+        if (!Number.isFinite(current) || current < 0) throw new Error('INVALID_CURSOR');
+        if (cursor < current) throw new Error('CURSOR_REGRESSION');
+
+        cache.replaceMembers(changes.members);
+        if (changes.team) cache.setTeam(changes.team);
+        for (const note of changes.notes) cache.appendNote(note);
+        for (const event of changes.events) cache.appendEvent(event);
+        for (const task of changes.tasks) cache.upsertTask(task);
+        for (const notification of changes.notifications) cache.upsertNotification(notification);
+        cache.setMeta('cursor', String(cursor));
+      });
+      apply();
+    },
   };
+  return cache;
 }

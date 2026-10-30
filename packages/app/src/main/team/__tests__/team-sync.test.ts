@@ -77,7 +77,9 @@ describe('team sync', () => {
     cache.upsertTask(task);
     cache.enqueue('start_assignee', { taskId: task.id, expectedVersion: 1 }, 'op-1', 1);
     const api = fakeApi();
-    const sync = createTeamSync({ api, cache, isOnline: () => true, now: () => 100 });
+    const now = vi.fn(() => 100);
+    const mergeChanges = vi.spyOn(cache, 'mergeChanges');
+    const sync = createTeamSync({ api, cache, isOnline: () => true, now });
 
     const state = await sync.syncNow(teamId);
 
@@ -85,8 +87,11 @@ describe('team sync', () => {
     expect(api.pullChanges).toHaveBeenCalledWith(teamId, 0);
     expect((api.startAssignee as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0])
       .toBeLessThan((api.pullChanges as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!);
+    expect(mergeChanges).toHaveBeenCalledWith(expect.objectContaining({ cursor: 9 }), 9);
     expect(cache.listPending()).toHaveLength(0);
     expect(cache.getMeta('cursor')).toBe('9');
+    expect(cache.getMeta('lastSyncedAt')).toBe('100');
+    expect(now).toHaveBeenCalledTimes(1);
     expect(state).toEqual({ phase: 'idle', pendingCount: 0, lastSyncedAt: 100, message: null });
     cache.close();
   });
@@ -114,8 +119,52 @@ describe('team sync', () => {
     const state = await sync.syncNow(teamId);
 
     expect(state).toEqual({ phase: 'error', pendingCount: 1, lastSyncedAt: null, message: 'VERSION_CONFLICT' });
-    expect(cache.listPending()).toEqual([]);
+    expect(cache.listPending()).toEqual([
+      expect.objectContaining({ id: 'op-1', status: 'failed', lastError: 'VERSION_CONFLICT' }),
+    ]);
     expect(api.pullChanges).not.toHaveBeenCalled();
+    cache.close();
+  });
+
+  it('retries failed operations on the next sync', async () => {
+    const cache = openTeamCache(cachePath());
+    cache.enqueue('start_assignee', { taskId: task.id, expectedVersion: 1 }, 'op-1', 1);
+    const startAssignee = vi.fn()
+      .mockRejectedValueOnce(new Error('TRANSIENT'))
+      .mockResolvedValueOnce(undefined);
+    const api = fakeApi({ startAssignee });
+    const sync = createTeamSync({ api, cache, isOnline: () => true, now: () => 100 });
+
+    const first = await sync.syncNow(teamId);
+
+    expect(first).toEqual({ phase: 'error', pendingCount: 1, lastSyncedAt: null, message: 'TRANSIENT' });
+    expect(cache.listPending()).toEqual([
+      expect.objectContaining({ id: 'op-1', status: 'failed', lastError: 'TRANSIENT' }),
+    ]);
+
+    const second = await sync.syncNow(teamId);
+
+    expect(startAssignee).toHaveBeenCalledTimes(2);
+    expect(cache.listPending()).toEqual([]);
+    expect(cache.getMeta('cursor')).toBe('9');
+    expect(second).toEqual({ phase: 'idle', pendingCount: 0, lastSyncedAt: 100, message: null });
+    cache.close();
+  });
+
+  it('rejects cursor regression without merging changes', async () => {
+    const cache = openTeamCache(cachePath());
+    cache.setMeta('cursor', '10');
+    const api = fakeApi();
+    const sync = createTeamSync({ api, cache, isOnline: () => true, now: () => 100 });
+
+    const state = await sync.syncNow(teamId);
+
+    expect(state.phase).toBe('error');
+    expect(state.message).toContain('CURSOR_REGRESSION');
+    expect(api.pullChanges).toHaveBeenCalledWith(teamId, 10);
+    expect(cache.getMeta('cursor')).toBe('10');
+    expect(cache.getTeam()).toBeNull();
+    expect(cache.getTask(task.id)).toBeNull();
     cache.close();
   });
 
