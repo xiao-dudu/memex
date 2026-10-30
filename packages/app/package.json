@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@memex/shared": "workspace:*",
+    "@supabase/supabase-js": "^2.118.0",
     "@tiptap/extension-placeholder": "^3.32.0",
     "@tiptap/extension-task-item": "^3.32.0",
     "@tiptap/extension-task-list": "^3.32.0",
