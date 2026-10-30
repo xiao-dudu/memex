@@ -33,6 +33,7 @@ export function createTeamRealtime(supabase: SupabaseClient): TeamRealtime {
       currentTeamId = teamId;
       channel = supabase.channel(`team:${teamId}`);
       for (const table of [
+        'team_members',
         'team_tasks',
         'team_task_assignees',
         'team_task_progress_notes',

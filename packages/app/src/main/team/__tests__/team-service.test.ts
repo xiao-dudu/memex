@@ -53,6 +53,7 @@ interface DepsOptions {
   membership?: { team_id: string; role: 'leader' | 'member' } | null;
   members?: TeamMember[];
   seed?: (cache: ReturnType<typeof openTeamCache>) => void;
+  online?: () => boolean;
 }
 
 function deps(options: DepsOptions = {}) {
@@ -62,6 +63,7 @@ function deps(options: DepsOptions = {}) {
     memberRow(secondLeader, teamA, 'leader'),
     memberRow(member, teamA, 'member'),
   ]);
+  cache.setTeam({ id: teamA, name: '当前团队' });
   options.seed?.(cache);
 
   const api = {} as TeamRemoteApi;
@@ -94,7 +96,7 @@ function deps(options: DepsOptions = {}) {
     realtime,
     now: () => 100,
     randomId,
-    isOnline: () => true,
+    isOnline: options.online ?? (() => true),
   });
   return { cache, api, sync, service, client, membership, randomId, realtime };
 }
@@ -145,14 +147,107 @@ describe('team service', () => {
     expect(payload(cache, 'submit_assignee').noteId).toBe(submitNote.id);
   });
 
-  it('clears a previous cache after a successful sign-in', async () => {
+  it('preserves cache and outbox when signing in as the same user', async () => {
     const task = makeTask();
-    const { cache, service } = deps({ seed: (target) => target.upsertTask(task) });
+    const { cache, service } = deps({
+      seed: (target) => {
+        target.setTeam({ id: teamA, name: '当前团队' });
+        target.upsertTask(task);
+        target.enqueue('start_assignee', { taskId: task.id, expectedVersion: 1 }, 'op-1', 1);
+      },
+    });
 
     await service.signIn({ email: 'leader@example.com', password: 'secret' });
 
+    expect(cache.getTask(task.id)).not.toBeNull();
+    expect(cache.listPending()).toHaveLength(1);
+  });
+
+  it('clears cache when signing in as a different user', async () => {
+    const task = makeTask();
+    const otherSession = { userId: 'other-user', email: 'other@example.com', displayName: '其他用户' };
+    const { cache, service, client, membership } = deps({
+      seed: (target) => {
+        target.setTeam({ id: teamA, name: '当前团队' });
+        target.upsertTask(task);
+      },
+    });
+    client.getSession
+      .mockReset()
+      .mockResolvedValueOnce(session)
+      .mockResolvedValue(otherSession);
+    membership.mockResolvedValue({ data: { team_id: teamB, role: 'leader' }, error: null });
+
+    await service.signIn({ email: 'other@example.com', password: 'secret' });
+
     expect(cache.getTask(task.id)).toBeNull();
-    expect(cache.listPending()).toEqual([]);
+  });
+
+  it('falls back to the cached session when membership refresh is offline', async () => {
+    const { service, membership } = deps({
+      seed: (target) => target.setTeam({ id: teamA, name: '当前团队' }),
+    });
+    await service.bootstrap();
+    membership.mockRejectedValue(new Error('Failed to fetch'));
+
+    const task = await service.createTask({
+      title: '离线任务', assigneeIds: [member.id], leaderIds: [leader.id],
+    });
+
+    expect(task.title).toBe('离线任务');
+  });
+
+  it('clears stale cache and rejects a mutation after demotion', async () => {
+    const task = makeTask();
+    const { cache, service, membership } = deps({
+      seed: (target) => {
+        target.setTeam({ id: teamA, name: '当前团队' });
+        target.upsertTask(task);
+      },
+    });
+    await service.bootstrap();
+    membership.mockResolvedValue({ data: { team_id: teamA, role: 'member' }, error: null });
+
+    await expect(service.createTask({
+      title: '降级后任务', assigneeIds: [member.id], leaderIds: [leader.id],
+    })).rejects.toThrow();
+    expect(cache.getTask(task.id)).toBeNull();
+  });
+
+  it('clears stale cache and rejects a mutation after removal', async () => {
+    const task = makeTask();
+    const { cache, service, membership } = deps({
+      seed: (target) => {
+        target.setTeam({ id: teamA, name: '当前团队' });
+        target.upsertTask(task);
+      },
+    });
+    await service.bootstrap();
+    membership.mockResolvedValue({ data: null, error: null });
+
+    await expect(service.updateTask(task.id, { title: '移除后更新', expectedVersion: 1 })).rejects.toThrow();
+    expect(cache.getTask(task.id)).toBeNull();
+  });
+
+  it('returns an offline sync state when membership refresh cannot reach Supabase', async () => {
+    const task = makeTask();
+    const { cache, service, sync, membership } = deps({
+      seed: (target) => {
+        target.setTeam({ id: teamA, name: '当前团队' });
+        target.upsertTask(task);
+        target.enqueue('start_assignee', { taskId: task.id, expectedVersion: 1 }, 'op-1', 1);
+        target.setMeta('lastSyncedAt', '50');
+      },
+    });
+    await service.bootstrap();
+    sync.syncNow.mockClear();
+    membership.mockRejectedValue(new Error('Failed to fetch'));
+
+    const state = await service.sync();
+
+    expect(state).toEqual({ phase: 'offline', pendingCount: 1, lastSyncedAt: 50, message: '等待联网' });
+    expect(cache.getTask(task.id)).not.toBeNull();
+    expect(sync.syncNow).not.toHaveBeenCalled();
   });
 
   it('clears stale cache when bootstrap sees a different team', async () => {

@@ -435,6 +435,23 @@ function createTeamCache(db: MemexDatabase): TeamCache {
         if (!Number.isFinite(current) || current < 0) throw new Error('INVALID_CURSOR');
         if (cursor < current) throw new Error('CURSOR_REGRESSION');
 
+        const serverTaskIds = new Set(changes.tasks.map((task) => task.id));
+        const localTaskIds = db.prepare('SELECT id FROM team_tasks').all() as { id: string }[];
+        for (const { id } of localTaskIds) {
+          if (serverTaskIds.has(id)) continue;
+          db.prepare('DELETE FROM team_task_assignees WHERE task_id = ?').run(id);
+          db.prepare('DELETE FROM team_task_leaders WHERE task_id = ?').run(id);
+          db.prepare('DELETE FROM team_notes WHERE task_id = ?').run(id);
+          db.prepare('DELETE FROM team_events WHERE task_id = ?').run(id);
+          db.prepare('DELETE FROM team_tasks WHERE id = ?').run(id);
+        }
+
+        const serverNoteIds = new Set(changes.notes.map((note) => note.id));
+        const localNoteIds = db.prepare('SELECT id FROM team_notes').all() as { id: string }[];
+        for (const { id } of localNoteIds) {
+          if (!serverNoteIds.has(id)) db.prepare('DELETE FROM team_notes WHERE id = ?').run(id);
+        }
+
         cache.replaceMembers(changes.members);
         if (changes.team) cache.setTeam(changes.team);
         for (const note of changes.notes) cache.appendNote(note);

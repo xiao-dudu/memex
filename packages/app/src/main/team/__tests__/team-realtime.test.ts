@@ -27,6 +27,11 @@ describe('team realtime', () => {
     const onChange = vi.fn();
 
     realtime.watch(teamId, onChange);
+    expect(channel.on).toHaveBeenCalledWith(
+      'postgres_changes',
+      expect.objectContaining({ table: 'team_members' }),
+      expect.any(Function),
+    );
     handlers[0]?.();
     handlers[1]?.();
     handlers[2]?.();

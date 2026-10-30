@@ -116,6 +116,17 @@ export function createTeamService({
     if (changed || !cacheMatchesSession(current)) cache.clear();
   };
 
+  const offlineSyncState = (): TeamSyncState => {
+    const raw = cache.getMeta('lastSyncedAt');
+    const lastSyncedAt = raw === null ? null : Number(raw);
+    return {
+      phase: 'offline',
+      pendingCount: cache.countOutbox(),
+      lastSyncedAt: Number.isFinite(lastSyncedAt) ? lastSyncedAt : null,
+      message: '等待联网',
+    };
+  };
+
   const loadSession = async (): Promise<TeamSessionInfo> => {
     const auth = await client.getSession();
     if (!auth) {
@@ -147,6 +158,8 @@ export function createTeamService({
           .then(emit)
           .catch(() => undefined);
       });
+    } else {
+      realtime?.stop();
     }
     return session;
   };
@@ -178,7 +191,17 @@ export function createTeamService({
   };
 
   const requireSession = async (): Promise<ActiveSession> => {
-    const current = session.signedIn ? session : await loadSession();
+    let current = session;
+    if (isOnline()) {
+      const previous = session;
+      try {
+        current = await loadSession();
+        reconcileCache(current, previous);
+      } catch (error) {
+        if (!session.signedIn) throw error;
+        current = session;
+      }
+    }
     if (!current.signedIn || !current.userId || !current.teamId || !current.role) {
       throw new Error('请先登录并加入团队');
     }
@@ -240,10 +263,14 @@ export function createTeamService({
   return {
     bootstrap,
     async signIn(input) {
+      const previousAuth = await client.getSession();
       await client.signIn(input.email, input.password);
-      realtime?.stop();
-      cache.clear();
-      session = signedOutSession();
+      const currentAuth = await client.getSession();
+      if (!currentAuth || previousAuth?.userId !== currentAuth.userId) {
+        realtime?.stop();
+        cache.clear();
+        session = signedOutSession();
+      }
       return bootstrap();
     },
     async signUp(input) {
@@ -596,8 +623,14 @@ export function createTeamService({
       emit(await sync.syncNow(current.teamId));
     },
     async sync() {
+      if (!isOnline()) return offlineSyncState();
       const previous = session;
-      const current = await loadSession();
+      let current: TeamSessionInfo;
+      try {
+        current = await loadSession();
+      } catch {
+        return offlineSyncState();
+      }
       reconcileCache(current, previous);
       if (!current.signedIn || !current.userId || !current.teamId || !current.role) {
         throw new Error('请先登录并加入团队');

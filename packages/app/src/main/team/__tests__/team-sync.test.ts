@@ -130,6 +130,34 @@ describe('team sync', () => {
     cache.close();
   });
 
+  it('removes rejected optimistic tasks and notes after the authoritative pull', async () => {
+    const cache = openTeamCache(cachePath());
+    cache.upsertTask(task);
+    cache.appendNote({ id: 'phantom-note', taskId: task.id, userId: 'member-1', body: '失败备注', createdAt: 1 });
+    cache.enqueue('create_task', { task }, 'op-1', 1);
+    const api = fakeApi({
+      createTask: vi.fn().mockRejectedValue(new Error('REJECTED')),
+      pullChanges: vi.fn().mockResolvedValue({
+        team: { id: teamId, name: '测试团队' },
+        members: [],
+        tasks: [],
+        notes: [],
+        events: [],
+        notifications: [],
+        cursor: 4,
+      }),
+    });
+    const sync = createTeamSync({ api, cache, isOnline: () => true, now: () => 100 });
+
+    const state = await sync.syncNow(teamId);
+
+    expect(state.phase).toBe('error');
+    expect(api.pullChanges).toHaveBeenCalledWith(teamId, 0);
+    expect(cache.getTask(task.id)).toBeNull();
+    expect(cache.listNotes(task.id)).toEqual([]);
+    expect(cache.getMeta('cursor')).toBe('4');
+    cache.close();
+  });
   it('passes client-generated note ids through outbox dispatch', async () => {
     const cache = openTeamCache(cachePath());
     cache.enqueue('add_progress_note', { taskId: task.id, noteId: 'note-a', body: '进展' }, 'op-1', 1);
