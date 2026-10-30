@@ -356,6 +356,16 @@ describe('team service', () => {
     await expect(service.addProgressNote(submitted.id, '已提交后仍可补充进展')).resolves.toBeUndefined();
   });
 
+  it('returns the cached session without reloading auth once signed in', async () => {
+    const { service, client } = deps();
+
+    const bootstrapped = await service.bootstrap();
+    expect(client.getSession).toHaveBeenCalledTimes(1);
+
+    await expect(service.getSession()).resolves.toEqual(bootstrapped.session);
+    expect(client.getSession).toHaveBeenCalledTimes(1);
+  });
+
   it('requires a non-empty note when submitting and rejects review before submission', async () => {
     const doing = makeTask({
       assignees: [{

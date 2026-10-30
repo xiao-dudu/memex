@@ -24,6 +24,7 @@ import type { TeamRealtime } from './team-realtime.js';
 import type { TeamRemoteApi, TeamSync } from './team-sync.js';
 
 export interface TeamService {
+  getSession(): Promise<TeamSessionInfo>;
   bootstrap(): Promise<TeamBootstrap>;
   signIn(input: TeamSignInInput): Promise<TeamBootstrap>;
   signUp(input: TeamSignUpInput): Promise<{ needsEmailConfirmation: boolean }>;
@@ -261,6 +262,9 @@ export function createTeamService({
   const replaceTask = (task: TeamTask) => cache.upsertTask(task);
 
   return {
+    async getSession() {
+      return session.signedIn ? session : loadSession();
+    },
     bootstrap,
     async signIn(input) {
       const previousAuth = await client.getSession();

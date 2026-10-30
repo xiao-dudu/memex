@@ -1,4 +1,4 @@
-import { app, BrowserWindow, safeStorage } from 'electron';
+import { app, BrowserWindow, Notification, safeStorage } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { mkdirSync } from 'node:fs';
@@ -20,6 +20,7 @@ import { createTeamRemoteApi } from './team/team-remote-api.js';
 import { createTeamRealtime } from './team/team-realtime.js';
 import { createTeamService } from './team/team-service.js';
 import { registerTeamIpc } from './team/team-ipc.js';
+import { createTeamNotificationController } from './team/team-notifications.js';
 
 let quitting = false;
 
@@ -64,8 +65,28 @@ if (!hasLock) {
         isOnline: () => true,
       });
       registerTeamIpc(teamService, (state) => getMainWindow()?.webContents.send(IPC.teamSyncState, state));
-      window.on('focus', () => void teamService.sync().catch(() => undefined));
-      app.on('before-quit', () => cache.close());
+      const notifications = createTeamNotificationController({
+        cache,
+        notify: (title, body) => {
+          if (Notification.isSupported()) new Notification({ title, body }).show();
+        },
+        now: Date.now,
+      });
+      const runNotifications = async () => {
+        const session = await teamService.getSession();
+        notifications.showUnread(session);
+        notifications.scanDue(session);
+      };
+      const notificationTimer = setInterval(() => void runNotifications().catch(() => undefined), 60_000);
+      void runNotifications().catch(() => undefined);
+      window.on('focus', () => {
+        void teamService.sync().catch(() => undefined);
+        void runNotifications().catch(() => undefined);
+      });
+      app.on('before-quit', () => {
+        clearInterval(notificationTimer);
+        cache.close();
+      });
     }
     window.on('close', (event) => {
       if (quitting) return;
