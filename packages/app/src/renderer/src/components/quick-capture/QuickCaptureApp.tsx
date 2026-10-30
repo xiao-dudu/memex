@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, CornerDownLeft, Loader2, StickyNote, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { textToDocument } from '../../lib/tiptap';
+import { endOfToday } from '../../lib/date';
 import { cn } from '../ui/utils';
 
 type CaptureMode = 'task' | 'note';
@@ -39,7 +40,7 @@ export default function QuickCaptureApp() {
     setError('');
     try {
       if (mode === 'task') {
-        await window.memex.tasks.create({ title: clean });
+        await window.memex.tasks.create({ title: clean, dueAt: endOfToday() });
       } else {
         await window.memex.notes.create({ contentJson: textToDocument(clean), plainText: clean });
       }
