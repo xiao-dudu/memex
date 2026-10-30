@@ -160,12 +160,13 @@ create or replace function public.team_create_task(
   p_leader_ids uuid[]
 )
 returns uuid language plpgsql security definer set search_path = public as $$
-declare v_creator uuid := auth.uid();
+declare v_creator uuid := auth.uid(); v_team_id uuid := p_team_id;
 begin
   perform public.assert_team_leader(p_team_id);
   if not public.claim_operation(p_operation_id, p_team_id, 'team_create_task') then
     return (public.operation_result(p_operation_id, 'team_create_task') #>> '{}')::uuid;
   end if;
+  perform 1 from public.teams where id = v_team_id for update;
   if p_leader_ids is null or cardinality(p_leader_ids) = 0 then raise exception 'APPROVER_REQUIRED'; end if;
   if p_assignee_ids is null or cardinality(p_assignee_ids) = 0 then raise exception 'INVALID_STATUS'; end if;
   perform public.validate_task_approvers(p_team_id, v_creator, p_assignee_ids, p_leader_ids);
@@ -214,6 +215,7 @@ begin
     return (public.operation_result(p_operation_id, 'team_update_task') #>> '{}')::integer;
   end if;
   if v_version <> p_expected_version then raise exception 'VERSION_CONFLICT'; end if;
+  perform 1 from public.teams where id = v_team_id for update;
   if p_leader_ids is null or cardinality(p_leader_ids) = 0 then raise exception 'APPROVER_REQUIRED'; end if;
   if p_assignee_ids is null or cardinality(p_assignee_ids) = 0 then raise exception 'INVALID_STATUS'; end if;
   perform public.validate_task_approvers(v_team_id, v_creator, p_assignee_ids, p_leader_ids);
@@ -400,6 +402,7 @@ begin
   from public.team_task_assignees
   where task_id = p_task_id and user_id = p_assignee_id
   for update;
+  perform 1 from public.teams where id = v_team_id for update;
   if v_status is null then raise exception 'NOT_AUTHORIZED'; end if;
   if not public.claim_operation(p_operation_id, v_team_id, 'team_review_assignee') then
     return (public.operation_result(p_operation_id, 'team_review_assignee') #>> '{}')::integer;
@@ -460,6 +463,7 @@ begin
     return (public.operation_result(p_operation_id, 'team_reopen_task') #>> '{}')::integer;
   end if;
   if v_version <> p_expected_version then raise exception 'VERSION_CONFLICT'; end if;
+  perform 1 from public.teams where id = v_team_id for update;
   if exists (select 1 from public.team_task_assignees where task_id = p_task_id and status not in ('approved', 'closed')) then
     raise exception 'INVALID_STATUS';
   end if;
@@ -521,6 +525,7 @@ begin
   from public.team_task_assignees
   where task_id = p_task_id and user_id = p_assignee_id
   for update;
+  perform 1 from public.teams where id = v_team_id for update;
   if v_status is null then raise exception 'NOT_AUTHORIZED'; end if;
   if not public.claim_operation(p_operation_id, v_team_id, 'team_close_assignee') then
     return (public.operation_result(p_operation_id, 'team_close_assignee') #>> '{}')::integer;

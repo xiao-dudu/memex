@@ -363,11 +363,33 @@ select is(
     order by created_at desc
     limit 1
   ), 'hex'),
-  encode(digest(current_setting('test.invite_token'), 'sha256'), 'hex'),
+  encode(extensions.digest(current_setting('test.invite_token'), 'sha256'), 'hex'),
   'invite stores only the SHA-256 token hash'
 );
 
+select set_config('request.jwt.claims', '{"sub":"44444444-4444-4444-8444-444444444444","email":"leader2@example.com"}', true);
+select is(
+  length(set_config(
+    'test.wrong_email_token',
+    public.team_create_invite(
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'wrong@example.com',
+      (extract(epoch from now()) * 1000)::bigint + 86400000,
+      '44444444-4444-4444-8444-444444444455'
+    ),
+    true
+  )),
+  64,
+  'leader can create an invite for a different email'
+);
 select set_config('request.jwt.claims', '{"sub":"66666666-6666-4666-8666-666666666666","email":"invitee@example.com"}', true);
+select throws_ok(
+  $$select public.team_accept_invite(current_setting('test.wrong_email_token'), '错误邮箱', '66666666-6666-4666-8666-666666666664')$$,
+  'P0001',
+  'INVITE_EMAIL_MISMATCH',
+  'invite cannot be accepted by a different email'
+);
+
 select is(
   public.team_accept_invite(
     current_setting('test.invite_token'),
@@ -385,6 +407,24 @@ select is(
   ),
   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid,
   'duplicate accept operation returns the stored team id'
+);
+
+reset role;
+insert into public.team_invites(team_id, email, token_hash, expires_at, created_by)
+values (
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'expired@example.com',
+  extensions.digest('expired-token', 'sha256'),
+  public.epoch_ms() - 1000,
+  '11111111-1111-4111-8111-111111111111'
+);
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"66666666-6666-4666-8666-666666666666","email":"invitee@example.com"}', true);
+select throws_ok(
+  $$select public.team_accept_invite('expired-token', null, '66666666-6666-4666-8666-666666666665')$$,
+  'P0001',
+  'INVITE_INVALID',
+  'expired invite cannot be accepted'
 );
 
 select set_config('request.jwt.claims', '{"sub":"11111111-1111-4111-8111-111111111111","email":"leader@example.com"}', true);
@@ -477,6 +517,68 @@ select is(
   'member',
   'second leader becomes member'
 );
+select is(
+  length(set_config(
+    'test.conflict_revoke_token',
+    public.team_create_invite(
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'conflict-revoke@example.com',
+      (extract(epoch from now()) * 1000)::bigint + 86400000,
+      '11111111-1111-4111-8111-111111111115'
+    ),
+    true
+  )),
+  64,
+  'leader can create an invite for conflict coverage'
+);
+select set_config(
+  'test.conflict_revoke_id',
+  (
+    select id::text from public.team_invites
+    where team_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+      and email = 'conflict-revoke@example.com'
+    order by created_at desc limit 1
+  ),
+  true
+);
+select throws_ok(
+  $$select public.team_revoke_invite(current_setting('test.conflict_revoke_id')::uuid, '44444444-4444-4444-8444-444444444447')$$,
+  'P0001',
+  'OPERATION_CONFLICT',
+  'revoke-invite operation id conflict is rejected'
+);
+select is(
+  length(set_config(
+    'test.leader_invite_token',
+    public.team_create_invite(
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'leader@example.com',
+      (extract(epoch from now()) * 1000)::bigint + 86400000,
+      '11111111-1111-4111-8111-111111111113'
+    ),
+    true
+  )),
+  64,
+  'last leader can create an invite'
+);
+select throws_ok(
+  $$select public.team_accept_invite(current_setting('test.leader_invite_token'), '领导', '11111111-1111-4111-8111-111111111114')$$,
+  'P0001',
+  'ALREADY_IN_TEAM',
+  'active last leader cannot accept an invite'
+);
+select throws_ok(
+  $$select public.team_set_member_role('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '66666666-6666-4666-8666-666666666666', 'leader', '44444444-4444-4444-8444-444444444451')$$,
+  'P0001',
+  'OPERATION_CONFLICT',
+  'set-role operation id conflict is rejected'
+);
+select throws_ok(
+  $$select public.team_remove_member('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '66666666-6666-4666-8666-666666666666', '44444444-4444-4444-8444-444444444447')$$,
+  'P0001',
+  'OPERATION_CONFLICT',
+  'remove-member operation id conflict is rejected'
+);
 select throws_ok(
   $$select public.team_set_member_role('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111', 'member', '44444444-4444-4444-8444-444444444445')$$,
   'P0001',
@@ -501,6 +603,8 @@ insert into public.team_tasks (id, team_id, title, created_by)
 values ('13131313-1313-4313-8313-131313131313', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '领导任务', '77777777-7777-4777-8777-777777777777');
 insert into public.team_task_leaders (task_id, team_id, user_id)
 values ('13131313-1313-4313-8313-131313131313', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '77777777-7777-4777-8777-777777777777');
+insert into public.team_tasks (id, team_id, title, created_by)
+values ('14141414-1414-4414-8414-141414141414', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '历史创建任务', '66666666-6666-4666-8666-666666666666');
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"11111111-1111-4111-8111-111111111111","email":"leader@example.com"}', true);
 select throws_ok(
@@ -552,6 +656,20 @@ select throws_ok(
   'P0001',
   'ALREADY_IN_TEAM',
   'user cannot create a second active team'
+);
+
+reset role;
+select ok(
+  position('perform 1 from public.teams where id = v_team_id for update;' in pg_get_functiondef('public.team_create_task(uuid,uuid,uuid,text,text,text,text,bigint,text[],uuid[],uuid[])'::regprocedure)) > 0
+  and position('perform 1 from public.teams where id = v_team_id for update;' in pg_get_functiondef('public.team_update_task(uuid,uuid,integer,text,text,text,text,bigint,text[],uuid[],uuid[])'::regprocedure)) > 0
+  and position('perform 1 from public.teams where id = v_team_id for update;' in pg_get_functiondef('public.team_reopen_task(uuid,integer,uuid)'::regprocedure)) > 0
+  and position('perform 1 from public.teams where id = v_team_id for update;' in pg_get_functiondef('public.team_close_assignee(uuid,uuid,text,integer,uuid)'::regprocedure)) > 0,
+  'task RPCs lock team rows before assignment/leadership validation'
+);
+select ok(
+  position('v_team_inserted boolean := false' in pg_get_functiondef('public.team_create_team(uuid,text,text,uuid)'::regprocedure)) > 0
+  and position('delete from public.teams where id = p_team_id' in pg_get_functiondef('public.team_create_team(uuid,text,text,uuid)'::regprocedure)) > 0,
+  'create-team claim conflict cleans up an inserted team'
 );
 
 select * from finish();

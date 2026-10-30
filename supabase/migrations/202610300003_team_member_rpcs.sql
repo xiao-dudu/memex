@@ -11,6 +11,7 @@ declare
   v_email text := lower(coalesce(auth.jwt() ->> 'email', ''));
   v_display_name text;
   v_result jsonb;
+  v_team_inserted boolean := false;
 begin
   v_result := public.operation_result(p_operation_id, 'create_team');
   if v_result is not null then
@@ -26,10 +27,14 @@ begin
 
   insert into public.teams(id, name, created_by)
   values (p_team_id, p_name, auth.uid());
+  v_team_inserted := true;
 
   if not public.claim_operation(p_operation_id, p_team_id, 'create_team') then
     v_result := public.operation_result(p_operation_id, 'create_team');
     if v_result is not null then
+      if v_team_inserted then
+        delete from public.teams where id = p_team_id;
+      end if;
       return (v_result #>> '{}')::uuid;
     end if;
     raise exception 'OPERATION_CONFLICT';
@@ -46,6 +51,9 @@ begin
 exception when unique_violation then
   v_result := public.operation_result(p_operation_id, 'create_team');
   if v_result is not null then
+    if v_team_inserted then
+      delete from public.teams where id = p_team_id;
+    end if;
     return (v_result #>> '{}')::uuid;
   end if;
   raise exception 'ALREADY_IN_TEAM';
@@ -60,7 +68,7 @@ create or replace function public.team_create_invite(
 )
 returns text language plpgsql security definer set search_path = public as $$
 declare
-  v_token text := encode(gen_random_bytes(32), 'hex');
+  v_token text := encode(extensions.gen_random_bytes(32), 'hex');
   v_email text := lower(trim(coalesce(p_email, '')));
 begin
   perform public.assert_team_leader(p_team_id);
@@ -71,7 +79,7 @@ begin
   -- Invite creation is online-only: the plaintext token is returned once and
   -- must not be persisted in team_operations. A retry creates a fresh invite.
   insert into public.team_invites(team_id, email, token_hash, expires_at, created_by)
-  values (p_team_id, v_email, digest(v_token, 'sha256'), p_expires_at, auth.uid());
+  values (p_team_id, v_email, extensions.digest(v_token, 'sha256'), p_expires_at, auth.uid());
   return v_token;
 end;
 $$;
@@ -95,7 +103,7 @@ begin
 
   select * into v_invite
   from public.team_invites
-  where token_hash = digest(p_token, 'sha256')
+  where token_hash = extensions.digest(p_token, 'sha256')
     and accepted_at is null
     and revoked_at is null
     and expires_at > public.epoch_ms()
@@ -108,6 +116,12 @@ begin
     raise exception 'INVITE_INVALID';
   end if;
   if lower(v_invite.email) <> v_email then raise exception 'INVITE_EMAIL_MISMATCH'; end if;
+  if exists (
+    select 1 from public.team_members
+    where team_id = v_invite.team_id and user_id = auth.uid() and status = 'active'
+  ) then
+    raise exception 'ALREADY_IN_TEAM';
+  end if;
 
   if not public.claim_operation(p_operation_id, v_invite.team_id, 'accept_invite') then
     v_result := public.operation_result(p_operation_id, 'accept_invite');
@@ -184,7 +198,18 @@ begin
   end if;
 
   perform public.assert_team_leader(v_team_id);
-  if not public.claim_operation(p_operation_id, v_team_id, 'revoke_invite') then return; end if;
+  if not public.claim_operation(p_operation_id, v_team_id, 'revoke_invite') then
+    if exists (
+      select 1 from public.team_operations
+      where id = p_operation_id
+        and user_id = auth.uid()
+        and team_id = v_team_id
+        and operation_type = 'revoke_invite'
+    ) then
+      return;
+    end if;
+    raise exception 'OPERATION_CONFLICT';
+  end if;
   update public.team_invites
   set revoked_at = public.epoch_ms()
   where id = p_invite_id;
@@ -229,7 +254,18 @@ begin
     if v_leader_count <= 1 then raise exception 'LAST_LEADER'; end if;
   end if;
 
-  if not public.claim_operation(p_operation_id, p_team_id, 'set_member_role') then return; end if;
+  if not public.claim_operation(p_operation_id, p_team_id, 'set_member_role') then
+    if exists (
+      select 1 from public.team_operations
+      where id = p_operation_id
+        and user_id = auth.uid()
+        and team_id = p_team_id
+        and operation_type = 'set_member_role'
+    ) then
+      return;
+    end if;
+    raise exception 'OPERATION_CONFLICT';
+  end if;
   update public.team_members
   set role = p_role
   where team_id = p_team_id and user_id = p_user_id and status = 'active';
@@ -306,17 +342,18 @@ begin
     raise exception 'TASK_LEADERSHIP_NOT_TRANSFERRED';
   end if;
 
-  if exists (
-    select 1
-    from public.team_tasks
-    where team_id = p_team_id
-      and created_by = p_user_id
-      and archived_at is null
-  ) then
-    raise exception 'TASK_LEADERSHIP_NOT_TRANSFERRED';
+  if not public.claim_operation(p_operation_id, p_team_id, 'remove_member') then
+    if exists (
+      select 1 from public.team_operations
+      where id = p_operation_id
+        and user_id = auth.uid()
+        and team_id = p_team_id
+        and operation_type = 'remove_member'
+    ) then
+      return;
+    end if;
+    raise exception 'OPERATION_CONFLICT';
   end if;
-
-  if not public.claim_operation(p_operation_id, p_team_id, 'remove_member') then return; end if;
   update public.team_members
   set status = 'removed', removed_at = public.epoch_ms()
   where team_id = p_team_id and user_id = p_user_id and status = 'active';
