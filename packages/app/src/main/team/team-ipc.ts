@@ -9,6 +9,7 @@ import {
   teamRolePatchSchema,
   teamSignInSchema,
   teamSignUpSchema,
+  teamSubmitSchema,
   teamTaskCreateSchema,
   teamTaskFilterSchema,
   teamTaskUpdateSchema,
@@ -52,8 +53,8 @@ export function registerTeamIpc(service: TeamService, onSyncState: (state: TeamS
   ipcMain.handle(IPC.teamAddNote, (_event, taskId, body) =>
     service.addProgressNote(id(taskId), text(body)));
   ipcMain.handle(IPC.teamSubmitAssignee, (_event, taskId, body, expectedVersion) => {
-    const input = teamAssigneeActionSchema.parse({ taskId, expectedVersion, note: body });
-    return service.submitAssignee(input.taskId, input.note!, input.expectedVersion);
+    const input = teamSubmitSchema.parse({ taskId, expectedVersion, note: body });
+    return service.submitAssignee(input.taskId, input.note, input.expectedVersion);
   });
   ipcMain.handle(IPC.teamReviewAssignee, (_event, taskId, assigneeId, decision, note, expectedVersion) => {
     const input = teamReviewSchema.parse({

@@ -110,19 +110,50 @@ describe('team sync', () => {
     cache.close();
   });
 
-  it('marks failed operations and exposes the error', async () => {
+  it('continues after a failed row and still pulls changes', async () => {
     const cache = openTeamCache(cachePath());
     cache.enqueue('start_assignee', { taskId: task.id, expectedVersion: 1 }, 'op-1', 1);
+    cache.enqueue('add_progress_note', { taskId: task.id, noteId: 'note-1', body: '继续同步' }, 'op-2', 2);
     const api = fakeApi({ startAssignee: vi.fn().mockRejectedValue(new Error('VERSION_CONFLICT')) });
     const sync = createTeamSync({ api, cache, isOnline: () => true, now: () => 100 });
 
     const state = await sync.syncNow(teamId);
 
-    expect(state).toEqual({ phase: 'error', pendingCount: 1, lastSyncedAt: null, message: 'VERSION_CONFLICT' });
+    expect(api.startAssignee).toHaveBeenCalled();
+    expect(api.addProgressNote).toHaveBeenCalledWith('op-2', task.id, 'note-1', '继续同步');
+    expect(api.pullChanges).toHaveBeenCalledWith(teamId, 0);
+    expect(cache.getMeta('cursor')).toBe('9');
+    expect(state).toEqual({ phase: 'error', pendingCount: 1, lastSyncedAt: 100, message: 'VERSION_CONFLICT' });
     expect(cache.listPending()).toEqual([
       expect.objectContaining({ id: 'op-1', status: 'failed', lastError: 'VERSION_CONFLICT' }),
     ]);
-    expect(api.pullChanges).not.toHaveBeenCalled();
+    cache.close();
+  });
+
+  it('passes client-generated note ids through outbox dispatch', async () => {
+    const cache = openTeamCache(cachePath());
+    cache.enqueue('add_progress_note', { taskId: task.id, noteId: 'note-a', body: '进展' }, 'op-1', 1);
+    cache.enqueue('submit_assignee', { taskId: task.id, noteId: 'note-b', body: '请验收', expectedVersion: 1 }, 'op-2', 2);
+    const api = fakeApi({
+      pullChanges: vi.fn().mockResolvedValue({
+        team: { id: teamId, name: '测试团队' },
+        members: [],
+        tasks: [task],
+        notes: [{ id: 'note-a', taskId: task.id, userId: 'member-1', body: '进展', createdAt: 2 }],
+        events: [],
+        notifications: [],
+        cursor: 9,
+      }),
+    });
+    const sync = createTeamSync({ api, cache, isOnline: () => true, now: () => 100 });
+
+    await sync.syncNow(teamId);
+
+    expect(api.addProgressNote).toHaveBeenCalledWith('op-1', task.id, 'note-a', '进展');
+    expect(api.submitAssignee).toHaveBeenCalledWith('op-2', task.id, 'note-b', '请验收', 1);
+    expect(cache.listNotes(task.id)).toEqual([
+      { id: 'note-a', taskId: task.id, userId: 'member-1', body: '进展', createdAt: 2 },
+    ]);
     cache.close();
   });
 
@@ -137,7 +168,7 @@ describe('team sync', () => {
 
     const first = await sync.syncNow(teamId);
 
-    expect(first).toEqual({ phase: 'error', pendingCount: 1, lastSyncedAt: null, message: 'TRANSIENT' });
+    expect(first).toEqual({ phase: 'error', pendingCount: 1, lastSyncedAt: 100, message: 'TRANSIENT' });
     expect(cache.listPending()).toEqual([
       expect.objectContaining({ id: 'op-1', status: 'failed', lastError: 'TRANSIENT' }),
     ]);

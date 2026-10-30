@@ -22,8 +22,8 @@ export interface TeamRemoteApi {
   createTask(operationId: string, task: TeamTask): Promise<void>;
   updateTask(operationId: string, task: TeamTask, expectedVersion: number): Promise<void>;
   startAssignee(operationId: string, taskId: string, expectedVersion: number): Promise<void>;
-  addProgressNote(operationId: string, taskId: string, body: string): Promise<void>;
-  submitAssignee(operationId: string, taskId: string, body: string, expectedVersion: number): Promise<void>;
+  addProgressNote(operationId: string, taskId: string, noteId: string, body: string): Promise<void>;
+  submitAssignee(operationId: string, taskId: string, noteId: string, body: string, expectedVersion: number): Promise<void>;
   reviewAssignee(
     operationId: string,
     taskId: string,
@@ -71,6 +71,7 @@ function readCursor(cache: TeamCache): number {
 type OutboxPayload = {
   task?: TeamTask;
   taskId?: string;
+  noteId?: string;
   expectedVersion?: number;
   body?: string;
   assigneeId?: string;
@@ -99,9 +100,9 @@ export function createTeamSync({ api, cache, isOnline, now }: SyncOptions): Team
       case 'start_assignee':
         return api.startAssignee(id, payload.taskId!, payload.expectedVersion!);
       case 'add_progress_note':
-        return api.addProgressNote(id, payload.taskId!, payload.body!);
+        return api.addProgressNote(id, payload.taskId!, payload.noteId!, payload.body!);
       case 'submit_assignee':
-        return api.submitAssignee(id, payload.taskId!, payload.body!, payload.expectedVersion!);
+        return api.submitAssignee(id, payload.taskId!, payload.noteId!, payload.body!, payload.expectedVersion!);
       case 'review_assignee':
         return api.reviewAssignee(
           id,
@@ -150,6 +151,7 @@ export function createTeamSync({ api, cache, isOnline, now }: SyncOptions): Team
       }
 
       try {
+        let firstOutboxError: string | null = null;
         for (const row of cache.listPending()) {
           try {
             await dispatch(row.id, row.type, JSON.parse(row.payloadJson) as OutboxPayload);
@@ -157,7 +159,7 @@ export function createTeamSync({ api, cache, isOnline, now }: SyncOptions): Team
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             cache.markPending(row.id, 'failed', message);
-            return { phase: 'error', pendingCount: cache.countOutbox(), lastSyncedAt: null, message };
+            firstOutboxError ??= message;
           }
         }
 
@@ -166,6 +168,14 @@ export function createTeamSync({ api, cache, isOnline, now }: SyncOptions): Team
         const syncedAt = now();
         cache.mergeChanges(changes, changes.cursor);
         cache.setMeta('lastSyncedAt', String(syncedAt));
+        if (firstOutboxError) {
+          return {
+            phase: 'error',
+            pendingCount: cache.countOutbox(),
+            lastSyncedAt: syncedAt,
+            message: firstOutboxError,
+          };
+        }
         return { phase: 'idle', pendingCount: cache.countOutbox(), lastSyncedAt: syncedAt, message: null };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

@@ -93,9 +93,33 @@ export function createTeamService({
   const listeners = new Set<(state: TeamSyncState) => void>();
   const emit = (state: TeamSyncState) => listeners.forEach((listener) => listener(state));
 
+  type ActiveSession = TeamSessionInfo & {
+    userId: string;
+    teamId: string;
+    role: 'leader' | 'member';
+  };
+
+  const cacheMatchesSession = (current: TeamSessionInfo): boolean => {
+    if (!current.userId || !current.teamId || !current.role) return false;
+    if (cache.getTeam()?.id !== current.teamId) return false;
+    return cache.listMembers().some(
+      (member) => member.id === current.userId && member.role === current.role && member.removedAt === null,
+    );
+  };
+
+  const reconcileCache = (current: TeamSessionInfo, previous: TeamSessionInfo) => {
+    const changed = previous.signedIn && (
+      previous.userId !== current.userId
+      || previous.teamId !== current.teamId
+      || previous.role !== current.role
+    );
+    if (changed || !cacheMatchesSession(current)) cache.clear();
+  };
+
   const loadSession = async (): Promise<TeamSessionInfo> => {
     const auth = await client.getSession();
     if (!auth) {
+      realtime?.stop();
       session = signedOutSession();
       return session;
     }
@@ -128,7 +152,9 @@ export function createTeamService({
   };
 
   const bootstrap = async (): Promise<TeamBootstrap> => {
+    const previous = session;
     const current = await loadSession();
+    reconcileCache(current, previous);
     if (!current.signedIn || !current.teamId || !current.role) {
       return {
         session: current,
@@ -151,16 +177,54 @@ export function createTeamService({
     };
   };
 
-  const requireSession = async () => {
+  const requireSession = async (): Promise<ActiveSession> => {
     const current = session.signedIn ? session : await loadSession();
     if (!current.signedIn || !current.userId || !current.teamId || !current.role) {
       throw new Error('请先登录并加入团队');
     }
-    return current as TeamSessionInfo & {
-      userId: string;
-      teamId: string;
-      role: 'leader' | 'member';
-    };
+    return current as ActiveSession;
+  };
+
+  const requireLeader = (current: ActiveSession) => {
+    if (current.role !== 'leader') throw new Error('仅团队领导可执行此操作');
+  };
+
+  const isTaskEditor = (task: TeamTask, userId: string) =>
+    task.createdBy === userId || task.leaders.some((leader) => leader.id === userId);
+
+  const requireTaskEditor = (current: ActiveSession, task: TeamTask) => {
+    requireLeader(current);
+    if (!isTaskEditor(task, current.userId)) throw new Error('无权修改任务');
+  };
+
+  const requireOpenTask = (task: TeamTask) => {
+    if (task.archivedAt !== null) throw new Error('任务已归档');
+  };
+
+  const requireTaskVersion = (task: TeamTask, expectedVersion: number) => {
+    if (task.version !== expectedVersion) throw new Error('任务版本已变化，请刷新');
+  };
+
+  const requireAssignee = (task: TeamTask, userId: string) => {
+    const assignee = task.assignees.find((item) => item.id === userId);
+    if (!assignee) throw new Error('无权更新此分项');
+    return assignee;
+  };
+
+  const requireAssigneeVersion = (version: number, expectedVersion: number) => {
+    if (version !== expectedVersion) throw new Error('分项版本已变化，请刷新');
+  };
+
+  const activeLeaderIds = () => cache
+    .listMembers()
+    .filter((member) => member.role === 'leader' && member.removedAt === null)
+    .map((member) => member.id);
+
+  const findVisibleTask = async (id: string): Promise<TeamTask | null> => {
+    const current = await requireSession();
+    const task = cache.getTask(id);
+    if (!task) return null;
+    return current.role === 'leader' || task.assignees.some((item) => item.id === current.userId) ? task : null;
   };
 
   const queue = (type: string, payload: unknown) => {
@@ -177,6 +241,9 @@ export function createTeamService({
     bootstrap,
     async signIn(input) {
       await client.signIn(input.email, input.password);
+      realtime?.stop();
+      cache.clear();
+      session = signedOutSession();
       return bootstrap();
     },
     async signUp(input) {
@@ -210,21 +277,21 @@ export function createTeamService({
       return cache.listNotifications(current.userId);
     },
     async getTask(id) {
-      const current = await requireSession();
-      const task = cache.getTask(id);
-      if (!task) return null;
-      return current.role === 'leader' || task.assignees.some((item) => item.id === current.userId) ? task : null;
+      return findVisibleTask(id);
     },
     async getTaskNotes(taskId) {
-      await requireSession();
+      const task = await findVisibleTask(taskId);
+      if (!task) throw new Error('任务不存在或无权限');
       return cache.listNotes(taskId);
     },
     async getTaskEvents(taskId) {
-      await requireSession();
+      const task = await findVisibleTask(taskId);
+      if (!task) throw new Error('任务不存在或无权限');
       return cache.listEvents(taskId);
     },
     async createTask(input) {
       const current = await requireSession();
+      requireLeader(current);
       const leaderIds = [...new Set([current.userId, ...input.leaderIds])];
       const assigneeIds = [...new Set(input.assigneeIds)];
       if (!hasNonAssigneeApprover(assigneeIds, leaderIds, current.userId)) {
@@ -237,7 +304,12 @@ export function createTeamService({
       const assignees = assigneeIds
         .map((id) => members.find((item) => item.id === id))
         .filter((item) => item !== undefined);
-      if (leaders.length !== leaderIds.length || assignees.length !== assigneeIds.length) {
+      if (
+        leaders.length !== leaderIds.length
+        || assignees.length !== assigneeIds.length
+        || leaders.some((leader) => leader.role !== 'leader' || leader.removedAt !== null)
+        || assignees.some((assignee) => assignee.removedAt !== null)
+      ) {
         throw new Error('成员列表已变化，请刷新');
       }
       const timestamp = now();
@@ -276,7 +348,9 @@ export function createTeamService({
       const current = await requireSession();
       const existing = cache.getTask(id);
       if (!existing) throw new Error('任务不存在');
-      if (current.role !== 'leader' && existing.createdBy !== current.userId) throw new Error('无权修改任务');
+      requireTaskEditor(current, existing);
+      requireOpenTask(existing);
+      requireTaskVersion(existing, patch.expectedVersion);
       const { expectedVersion, assigneeIds, leaderIds, ...fields } = patch;
       const next: TeamTask = {
         ...existing,
@@ -290,11 +364,30 @@ export function createTeamService({
       if (assigneeIds || leaderIds) {
         const members = cache.listMembers();
         if (leaderIds) {
-          next.leaders = [...new Set([existing.createdBy, ...leaderIds])]
+          const nextLeaderIds = [...new Set([existing.createdBy, ...leaderIds])];
+          const leaders = nextLeaderIds
             .map((memberId) => members.find((item) => item.id === memberId))
             .filter((item) => item !== undefined);
+          if (
+            leaders.length !== nextLeaderIds.length
+            || leaders.some((leader) => leader.role !== 'leader' || leader.removedAt !== null)
+          ) {
+            throw new Error('成员列表已变化，请刷新');
+          }
+          next.leaders = leaders;
         }
         if (assigneeIds) {
+          const assignees = assigneeIds
+            .map((memberId) => members.find((item) => item.id === memberId))
+            .filter((item) => item !== undefined);
+          if (assignees.length !== assigneeIds.length || assignees.some((assignee) => assignee.removedAt !== null)) {
+            throw new Error('成员列表已变化，请刷新');
+          }
+          if (existing.assignees.some(
+            (assignee) => !assigneeIds.includes(assignee.id) && !['approved', 'closed'].includes(assignee.status),
+          )) {
+            throw new Error('存在未完成的分项，无法移除执行人');
+          }
           next.assignees = assigneeIds.map((memberId) => {
             const old = existing.assignees.find((item) => item.id === memberId);
             const member = members.find((item) => item.id === memberId);
@@ -310,6 +403,15 @@ export function createTeamService({
             };
           });
         }
+      }
+      const members = cache.listMembers();
+      const activeMembers = new Set(members.filter((member) => member.removedAt === null).map((member) => member.id));
+      const activeLeaders = new Set(activeLeaderIds());
+      if (
+        next.leaders.some((leader) => !activeLeaders.has(leader.id))
+        || next.assignees.some((assignee) => !activeMembers.has(assignee.id))
+      ) {
+        throw new Error('成员列表已变化，请刷新');
       }
       if (!hasNonAssigneeApprover(
         next.assignees.map((item) => item.id),
@@ -327,8 +429,12 @@ export function createTeamService({
       const current = await requireSession();
       const task = cache.getTask(taskId);
       if (!task) throw new Error('任务不存在');
-      const assignee = task.assignees.find((item) => item.id === current.userId);
-      if (!assignee) throw new Error('无权更新此分项');
+      requireOpenTask(task);
+      const assignee = requireAssignee(task, current.userId);
+      requireAssigneeVersion(assignee.version, expectedVersion);
+      if (assignee.status !== 'todo' && assignee.status !== 'doing') {
+        throw new Error('当前分项状态不允许开始');
+      }
       replaceTask({
         ...task,
         assignees: task.assignees.map((item) =>
@@ -341,20 +447,33 @@ export function createTeamService({
       const current = await requireSession();
       const task = cache.getTask(taskId);
       if (!task) throw new Error('任务不存在');
-      cache.appendNote({ id: randomId(), taskId, userId: current.userId, body, createdAt: now() });
+      requireOpenTask(task);
+      const assignee = requireAssignee(task, current.userId);
+      if (!['todo', 'doing', 'submitted'].includes(assignee.status)) {
+        throw new Error('当前分项状态不允许添加进展');
+      }
+      if (!body.trim()) throw new Error('进展内容不能为空');
+      const noteId = randomId();
+      cache.appendNote({ id: noteId, taskId, userId: current.userId, body, createdAt: now() });
       replaceTask({
         ...task,
         assignees: task.assignees.map((item) =>
           item.id === current.userId ? { ...item, latestNote: body } : item),
       });
-      queue('add_progress_note', { taskId, body });
+      queue('add_progress_note', { taskId, noteId, body });
       emit(await sync.syncNow(current.teamId));
     },
     async submitAssignee(taskId, body, expectedVersion) {
       const current = await requireSession();
       const task = cache.getTask(taskId);
       if (!task) throw new Error('任务不存在');
-      cache.appendNote({ id: randomId(), taskId, userId: current.userId, body, createdAt: now() });
+      requireOpenTask(task);
+      const assignee = requireAssignee(task, current.userId);
+      requireAssigneeVersion(assignee.version, expectedVersion);
+      if (assignee.status !== 'doing') throw new Error('当前分项状态不允许提交');
+      if (!body.trim()) throw new Error('提交说明不能为空');
+      const noteId = randomId();
+      cache.appendNote({ id: noteId, taskId, userId: current.userId, body, createdAt: now() });
       replaceTask({
         ...task,
         assignees: task.assignees.map((item) =>
@@ -362,20 +481,20 @@ export function createTeamService({
             ? { ...item, status: 'submitted', latestNote: body, version: item.version + 1 }
             : item),
       });
-      queue('submit_assignee', { taskId, body, expectedVersion });
+      queue('submit_assignee', { taskId, noteId, body, expectedVersion });
       emit(await sync.syncNow(current.teamId));
     },
     async reviewAssignee(taskId, assigneeId, decision, note, expectedVersion) {
       const current = await requireSession();
       const task = cache.getTask(taskId);
       if (!task) throw new Error('任务不存在');
-      const activeLeaderIds = cache
-        .listMembers()
-        .filter((item) => item.role === 'leader' && item.removedAt === null)
-        .map((item) => item.id);
-      if (!canApproveAssignee(task, current.userId, assigneeId, activeLeaderIds)) {
+      requireOpenTask(task);
+      if (!canApproveAssignee(task, current.userId, assigneeId, activeLeaderIds())) {
         throw new Error('无权验收此分项');
       }
+      const assignee = requireAssignee(task, assigneeId);
+      requireAssigneeVersion(assignee.version, expectedVersion);
+      if (assignee.status !== 'submitted') throw new Error('仅已提交的分项可验收');
       replaceTask({
         ...task,
         assignees: task.assignees.map((item) => item.id === assigneeId ? {
@@ -393,6 +512,23 @@ export function createTeamService({
       const current = await requireSession();
       const task = cache.getTask(taskId);
       if (!task) throw new Error('任务不存在');
+      requireTaskEditor(current, task);
+      requireTaskVersion(task, expectedVersion);
+      if (task.assignees.length === 0 || task.assignees.some(
+        (assignee) => assignee.status !== 'approved' && assignee.status !== 'closed',
+      )) {
+        throw new Error('仅已完成或已关闭的分项可重新打开');
+      }
+      const activeMembers = new Set(
+        cache.listMembers().filter((member) => member.removedAt === null).map((member) => member.id),
+      );
+      const leaders = new Set(activeLeaderIds());
+      if (
+        task.assignees.some((assignee) => assignee.status === 'approved' && !activeMembers.has(assignee.id))
+        || task.leaders.some((leader) => !leaders.has(leader.id))
+      ) {
+        throw new Error('成员列表已变化，请刷新');
+      }
       replaceTask({
         ...task,
         archivedAt: null,
@@ -407,6 +543,9 @@ export function createTeamService({
       const current = await requireSession();
       const task = cache.getTask(taskId);
       if (!task) throw new Error('任务不存在');
+      requireTaskEditor(current, task);
+      if (task.archivedAt !== null) throw new Error('任务已归档');
+      requireTaskVersion(task, expectedVersion);
       replaceTask({ ...task, archivedAt: now(), version: expectedVersion + 1 });
       queue('archive_task', { taskId, expectedVersion });
       emit(await sync.syncNow(current.teamId));
@@ -415,6 +554,11 @@ export function createTeamService({
       const current = await requireSession();
       const task = cache.getTask(taskId);
       if (!task) throw new Error('任务不存在');
+      requireTaskEditor(current, task);
+      requireOpenTask(task);
+      const assignee = requireAssignee(task, assigneeId);
+      requireAssigneeVersion(assignee.version, expectedVersion);
+      if (assignee.status === 'approved') throw new Error('已通过的分项不能关闭');
       replaceTask({
         ...task,
         assignees: task.assignees.map((item) =>
@@ -452,7 +596,12 @@ export function createTeamService({
       emit(await sync.syncNow(current.teamId));
     },
     async sync() {
-      const current = await requireSession();
+      const previous = session;
+      const current = await loadSession();
+      reconcileCache(current, previous);
+      if (!current.signedIn || !current.userId || !current.teamId || !current.role) {
+        throw new Error('请先登录并加入团队');
+      }
       const state = await sync.syncNow(current.teamId);
       emit(state);
       return state;

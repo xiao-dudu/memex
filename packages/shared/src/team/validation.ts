@@ -57,6 +57,12 @@ export const teamAssigneeActionSchema = z.object({
   note: body.optional(),
 });
 
+export const teamSubmitSchema = z.object({
+  taskId: uuid,
+  expectedVersion: z.number().int().positive(),
+  note: body,
+});
+
 export const teamReviewSchema = z.object({
   taskId: uuid,
   assigneeId: uuid,

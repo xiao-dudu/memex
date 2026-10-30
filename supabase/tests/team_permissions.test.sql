@@ -87,14 +87,25 @@ select lives_ok(
   'member can start own item'
 );
 select lives_ok(
-  $$select public.team_add_progress_note('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '已完成初稿', '88888888-8888-4888-8888-888888888888')$$,
+  $$select public.team_add_progress_note('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'd0000000-0000-4000-8000-000000000001', '已完成初稿', '88888888-8888-4888-8888-888888888888')$$,
   'member can add progress note'
 );
+select is(
+  (select id from public.team_task_progress_notes
+   where task_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and body = '已完成初稿'),
+  'd0000000-0000-4000-8000-000000000001'::uuid,
+  'progress note uses the client-generated id'
+);
 select lives_ok(
-  $$select public.team_submit_assignee('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '请验收', 2, '77777777-7777-4777-8777-777777777777')$$,
+  $$select public.team_submit_assignee('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'd0000000-0000-4000-8000-000000000002', '请验收', 2, '77777777-7777-4777-8777-777777777777')$$,
   'member can submit own item'
 );
-
+select is(
+  (select id from public.team_task_progress_notes
+   where task_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and body = '请验收'),
+  'd0000000-0000-4000-8000-000000000002'::uuid,
+  'submission note uses the client-generated id'
+);
 select set_config('request.jwt.claims', '{"sub":"11111111-1111-4111-8111-111111111111","email":"leader@example.com"}', true);
 select lives_ok(
   $$select public.team_review_assignee('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '22222222-2222-4222-8222-222222222222', 3, 'approve', '通过', '66666666-6666-4666-8666-666666666666')$$,
@@ -142,7 +153,7 @@ select is(
   'leader can start own assignee item'
 );
 select is(
-  public.team_submit_assignee('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', '自审批', 2, 'a0000000-0000-4000-8000-000000000002'),
+  public.team_submit_assignee('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'd0000000-0000-4000-8000-000000000003', '自审批', 2, 'a0000000-0000-4000-8000-000000000002'),
   3,
   'leader can submit own assignee item'
 );
@@ -185,14 +196,13 @@ select is(
   'duplicate start operation returns the stored version'
 );
 select lives_ok(
-  $$select public.team_add_progress_note('cccccccc-cccc-4ccc-8ccc-cccccccccccc', '重试备注', 'b0000000-0000-4000-8000-000000000003')$$,
+  $$select public.team_add_progress_note('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'd0000000-0000-4000-8000-000000000004', '重试备注', 'b0000000-0000-4000-8000-000000000003')$$,
   'member can add retry note'
 );
 select is(
-  public.team_add_progress_note('cccccccc-cccc-4ccc-8ccc-cccccccccccc', '重试备注', 'b0000000-0000-4000-8000-000000000003'),
-  (select id from public.team_task_progress_notes
-   where task_id = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' and body = '重试备注'),
-  'duplicate note operation returns the same note id'
+  public.team_add_progress_note('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'd0000000-0000-4000-8000-000000000004', '重试备注', 'b0000000-0000-4000-8000-000000000003'),
+  'd0000000-0000-4000-8000-000000000004'::uuid,
+  'duplicate note operation returns the same client note id'
 );
 
 select set_config('request.jwt.claims', '{"sub":"11111111-1111-4111-8111-111111111111","email":"leader@example.com"}', true);
@@ -257,13 +267,13 @@ select throws_ok(
   'removed member cannot start an assignee item'
 );
 select throws_ok(
-  $$select public.team_add_progress_note('ffffffff-ffff-4fff-8fff-ffffffffffff', '不应写入', 'c0000000-0000-4000-8000-000000000003')$$,
+  $$select public.team_add_progress_note('ffffffff-ffff-4fff-8fff-ffffffffffff', 'd0000000-0000-4000-8000-000000000005', '不应写入', 'c0000000-0000-4000-8000-000000000003')$$,
   'P0001',
   'NOT_AUTHORIZED',
   'removed member cannot add a progress note'
 );
 select throws_ok(
-  $$select public.team_submit_assignee('ffffffff-ffff-4fff-8fff-ffffffffffff', '不应提交', 1, 'c0000000-0000-4000-8000-000000000004')$$,
+  $$select public.team_submit_assignee('ffffffff-ffff-4fff-8fff-ffffffffffff', 'd0000000-0000-4000-8000-000000000006', '不应提交', 1, 'c0000000-0000-4000-8000-000000000004')$$,
   'P0001',
   'NOT_AUTHORIZED',
   'removed member cannot submit an assignee item'
@@ -653,7 +663,7 @@ select is(
   'assignee can start the reopen-coverage task'
 );
 select is(
-  public.team_submit_assignee('15151515-1515-4515-8515-151515151516', '提交', 2, '15151515-1515-4515-8515-151515151518'),
+  public.team_submit_assignee('15151515-1515-4515-8515-151515151516', 'd0000000-0000-4000-8000-000000000007', '提交', 2, '15151515-1515-4515-8515-151515151518'),
   3,
   'assignee can submit the reopen-coverage task'
 );
@@ -713,7 +723,7 @@ select is(
   'assignee can start the removed-leader reopen task'
 );
 select is(
-  public.team_submit_assignee('16161616-1616-4616-8616-161616161616', '提交', 2, '16161616-1616-4616-8616-161616161604'),
+  public.team_submit_assignee('16161616-1616-4616-8616-161616161616', 'd0000000-0000-4000-8000-000000000008', '提交', 2, '16161616-1616-4616-8616-161616161604'),
   3,
   'assignee can submit the removed-leader reopen task'
 );
@@ -781,8 +791,8 @@ with defs as (
     pg_get_functiondef('public.team_create_task(uuid,uuid,uuid,text,text,text,text,bigint,text[],uuid[],uuid[])'::regprocedure) as create_task_def,
     pg_get_functiondef('public.team_update_task(uuid,uuid,integer,text,text,text,text,bigint,text[],uuid[],uuid[])'::regprocedure) as update_task_def,
     pg_get_functiondef('public.team_start_assignee(uuid,integer,uuid)'::regprocedure) as start_assignee_def,
-    pg_get_functiondef('public.team_add_progress_note(uuid,text,uuid)'::regprocedure) as add_note_def,
-    pg_get_functiondef('public.team_submit_assignee(uuid,text,integer,uuid)'::regprocedure) as submit_assignee_def,
+    pg_get_functiondef('public.team_add_progress_note(uuid,uuid,text,uuid)'::regprocedure) as add_note_def,
+    pg_get_functiondef('public.team_submit_assignee(uuid,uuid,text,integer,uuid)'::regprocedure) as submit_assignee_def,
     pg_get_functiondef('public.team_review_assignee(uuid,uuid,integer,text,text,uuid)'::regprocedure) as review_assignee_def,
     pg_get_functiondef('public.team_reopen_task(uuid,integer,uuid)'::regprocedure) as reopen_task_def,
     pg_get_functiondef('public.team_archive_task(uuid,integer,uuid)'::regprocedure) as archive_task_def,

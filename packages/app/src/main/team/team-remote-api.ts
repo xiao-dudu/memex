@@ -44,14 +44,16 @@ export function createTeamRemoteApi(supabase: SupabaseClient): TeamRemoteApi {
       p_task_id: taskId,
       p_expected_version: expectedVersion,
     }),
-    addProgressNote: (operationId, taskId, body) => rpc('team_add_progress_note', {
+    addProgressNote: (operationId, taskId, noteId, body) => rpc('team_add_progress_note', {
       p_operation_id: operationId,
       p_task_id: taskId,
+      p_note_id: noteId,
       p_body: body,
     }),
-    submitAssignee: (operationId, taskId, body, expectedVersion) => rpc('team_submit_assignee', {
+    submitAssignee: (operationId, taskId, noteId, body, expectedVersion) => rpc('team_submit_assignee', {
       p_operation_id: operationId,
       p_task_id: taskId,
+      p_note_id: noteId,
       p_note: body,
       p_expected_version: expectedVersion,
     }),
