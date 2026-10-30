@@ -13,7 +13,7 @@ import {
   type TeamTaskFilter,
 } from '@memex/shared';
 
-export type OutboxStatus = 'pending' | 'failed';
+export type OutboxStatus = 'pending' | 'done' | 'failed';
 
 export interface OutboxRow {
   id: string;
@@ -84,6 +84,7 @@ export interface TeamCache {
   listNotifications(userId: string): TeamNotification[];
   enqueue(type: string, payload: unknown, id: string, createdAt: number): void;
   listPending(): OutboxRow[];
+  countOutbox(): number;
   markPending(id: string, status: OutboxStatus, lastError: string | null): void;
   clear(): void;
   close(): void;
@@ -384,6 +385,11 @@ function createTeamCache(db: MemexDatabase): TeamCache {
           lastError: row.last_error === null ? null : String(row.last_error),
           createdAt: Number(row.created_at),
         }));
+    },
+
+    countOutbox() {
+      const row = db.prepare("SELECT count(*) AS count FROM team_outbox WHERE status IN ('pending', 'failed')").get() as { count: number };
+      return row.count;
     },
 
     markPending(id, status, lastError) {

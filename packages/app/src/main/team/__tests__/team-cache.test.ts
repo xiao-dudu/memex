@@ -70,12 +70,18 @@ describe('team cache', () => {
     ]);
     expect(cache.listNotifications('member-1')).toHaveLength(1);
     expect(cache.listPending()).toEqual([expect.objectContaining({ id: 'op-1', type: 'start_assignee', status: 'pending' })]);
+    expect(cache.countOutbox()).toBe(1);
     cache.markPending('op-1', 'failed', 'offline');
     expect(cache.listPending()).toEqual([]);
+    expect(cache.countOutbox()).toBe(1);
     cache.markPending('op-1', 'pending', null);
     expect(cache.listPending()).toEqual([
       expect.objectContaining({ id: 'op-1', status: 'pending', attempts: 2, lastError: null }),
     ]);
+    expect(cache.countOutbox()).toBe(1);
+    cache.markPending('op-1', 'done', null);
+    expect(cache.listPending()).toEqual([]);
+    expect(cache.countOutbox()).toBe(0);
     cache.close();
   });
 
