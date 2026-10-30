@@ -266,7 +266,8 @@ export function createTeamService({
       const previousAuth = await client.getSession();
       await client.signIn(input.email, input.password);
       const currentAuth = await client.getSession();
-      if (!currentAuth || previousAuth?.userId !== currentAuth.userId) {
+      const previousUserId = previousAuth?.userId ?? session.userId;
+      if (!currentAuth || previousUserId !== currentAuth.userId) {
         realtime?.stop();
         cache.clear();
         session = signedOutSession();
@@ -623,13 +624,19 @@ export function createTeamService({
       emit(await sync.syncNow(current.teamId));
     },
     async sync() {
-      if (!isOnline()) return offlineSyncState();
+      if (!isOnline()) {
+        const state = offlineSyncState();
+        emit(state);
+        return state;
+      }
       const previous = session;
       let current: TeamSessionInfo;
       try {
         current = await loadSession();
       } catch {
-        return offlineSyncState();
+        const state = offlineSyncState();
+        emit(state);
+        return state;
       }
       reconcileCache(current, previous);
       if (!current.signedIn || !current.userId || !current.teamId || !current.role) {

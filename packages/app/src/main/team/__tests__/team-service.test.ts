@@ -163,6 +163,25 @@ describe('team service', () => {
     expect(cache.listPending()).toHaveLength(1);
   });
 
+  it('preserves cache when an expired previous auth refreshes the same cached user', async () => {
+    const task = makeTask();
+    const { cache, service, client } = deps({
+      seed: (target) => {
+        target.upsertTask(task);
+        target.enqueue('start_assignee', { taskId: task.id, expectedVersion: 1 }, 'op-1', 1);
+      },
+    });
+    await service.bootstrap();
+    client.getSession
+      .mockReset()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue(session);
+
+    await service.signIn({ email: 'leader@example.com', password: 'secret' });
+
+    expect(cache.getTask(task.id)).not.toBeNull();
+    expect(cache.listPending()).toHaveLength(1);
+  });
   it('clears cache when signing in as a different user', async () => {
     const task = makeTask();
     const otherSession = { userId: 'other-user', email: 'other@example.com', displayName: '其他用户' };
@@ -242,12 +261,16 @@ describe('team service', () => {
     await service.bootstrap();
     sync.syncNow.mockClear();
     membership.mockRejectedValue(new Error('Failed to fetch'));
+    const states: unknown[] = [];
+    const unsubscribe = service.onSyncState((value) => states.push(value));
 
     const state = await service.sync();
 
     expect(state).toEqual({ phase: 'offline', pendingCount: 1, lastSyncedAt: 50, message: '等待联网' });
+    expect(states).toEqual([state]);
     expect(cache.getTask(task.id)).not.toBeNull();
     expect(sync.syncNow).not.toHaveBeenCalled();
+    unsubscribe();
   });
 
   it('clears stale cache when bootstrap sees a different team', async () => {

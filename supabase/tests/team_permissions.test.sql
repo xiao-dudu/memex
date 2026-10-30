@@ -850,5 +850,15 @@ select ok(
   'create-team claim conflict cleans up an inserted team'
 );
 
+select ok(
+  exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'team_members'
+  ),
+  'team_members is published for realtime membership changes'
+);
 select * from finish();
 rollback;
