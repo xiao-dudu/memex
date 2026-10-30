@@ -238,6 +238,17 @@ begin
       select 1 from public.team_task_assignees existing
       where existing.task_id = p_task_id and existing.user_id = candidate.user_id
     )
+  ) and not exists (
+    select 1
+    from public.team_task_events reopened
+    where reopened.task_id = p_task_id
+      and reopened.event_type = 'reopened'::public.team_event_type
+      and reopened.sync_version > coalesce((
+        select max(terminal.sync_version)
+        from public.team_task_events terminal
+        where terminal.task_id = p_task_id
+          and terminal.event_type in ('approved'::public.team_event_type, 'closed'::public.team_event_type)
+      ), 0)
   ) then
     raise exception 'INVALID_STATUS';
   end if;

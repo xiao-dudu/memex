@@ -262,5 +262,70 @@ select throws_ok(
   null,
   'clients cannot execute notify_task_users directly'
 );
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-4111-8111-111111111111","email":"leader@example.com"}', true);
+select lives_ok(
+  $$select public.team_create_task(
+    'e0000000-0000-4000-8000-000000000001',
+    '12121212-1212-4212-8212-121212121212',
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    '全关闭任务', null, null, 'medium', null, '{}',
+    array['33333333-3333-4333-8333-333333333333']::uuid[],
+    array['11111111-1111-4111-8111-111111111111']::uuid[]
+  )$$,
+  'leader can create an all-closed regression task'
+);
+select is(
+  public.team_close_assignee(
+    '12121212-1212-4212-8212-121212121212',
+    '33333333-3333-4333-8333-333333333333',
+    '关闭',
+    1,
+    'e0000000-0000-4000-8000-000000000002'
+  ),
+  2,
+  'leader can close the only assignment'
+);
+select throws_ok(
+  $$select public.team_update_task(
+    'e0000000-0000-4000-8000-000000000003',
+    '12121212-1212-4212-8212-121212121212',
+    1,
+    '全关闭任务', null, null, 'medium', null, '{}',
+    array['33333333-3333-4333-8333-333333333333','44444444-4444-4444-8444-444444444444']::uuid[],
+    array['11111111-1111-4111-8111-111111111111']::uuid[]
+  )$$,
+  'P0001',
+  'INVALID_STATUS',
+  'all-closed task rejects new assignee before reopen'
+);
+select lives_ok(
+  $$select public.team_reopen_task('12121212-1212-4212-8212-121212121212', 1, 'e0000000-0000-4000-8000-000000000004')$$,
+  'leader can reopen an all-closed task'
+);
+select is(
+  (select status::text from public.team_task_assignees
+   where task_id = '12121212-1212-4212-8212-121212121212'
+     and user_id = '33333333-3333-4333-8333-333333333333'),
+  'closed',
+  'closed assignment remains closed after reopen'
+);
+select lives_ok(
+  $$select public.team_update_task(
+    'e0000000-0000-4000-8000-000000000005',
+    '12121212-1212-4212-8212-121212121212',
+    2,
+    '全关闭任务重开', null, null, 'medium', null, '{}',
+    array['33333333-3333-4333-8333-333333333333','44444444-4444-4444-8444-444444444444']::uuid[],
+    array['11111111-1111-4111-8111-111111111111']::uuid[]
+  )$$,
+  'all-closed task accepts new assignee after reopen'
+);
+select is(
+  (select status::text from public.team_task_assignees
+   where task_id = '12121212-1212-4212-8212-121212121212'
+     and user_id = '44444444-4444-4444-8444-444444444444'),
+  'todo',
+  'new assignee is added after all-closed reopen'
+);
 select * from finish();
 rollback;
