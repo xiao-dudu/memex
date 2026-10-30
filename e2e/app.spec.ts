@@ -30,7 +30,7 @@ test.afterEach(async () => {
 });
 
 test('creates tasks, edits a note, searches, and exposes MCP config', async () => {
-  const composer = page.getByPlaceholder('快速添加任务，回车创建');
+  const composer = page.getByLabel('快速添加任务');
   await composer.fill('项目计划评审');
   await composer.press('Enter');
   await composer.fill('给设计师回复邮件');
@@ -112,7 +112,7 @@ test('quick capture saves a task', async () => {
 });
 
 test('任务计时跟随模块切换：任务页窄条，离开后撑开', async () => {
-  const composer = page.getByPlaceholder('快速添加任务，回车创建');
+  const composer = page.getByLabel('快速添加任务');
   await composer.fill('专注写文档');
   await composer.press('Enter');
 
@@ -134,7 +134,7 @@ test('任务计时跟随模块切换：任务页窄条，离开后撑开', async
 });
 
 test('最小化时弹出桌面计时小组件，恢复后收回', async () => {
-  const composer = page.getByPlaceholder('快速添加任务，回车创建');
+  const composer = page.getByLabel('快速添加任务');
   await composer.fill('桌面小组件');
   await composer.press('Enter');
   await page.getByRole('button', { name: '设置任务计时' }).click();

@@ -109,6 +109,7 @@ export function TaskList() {
                 if (event.key === 'Enter') void submitDraft();
               }}
               placeholder="回车创建，默认今天截止"
+              aria-label="快速添加任务"
               className="h-6 flex-1 bg-transparent text-[13px] outline-none placeholder:text-[var(--faint)]"
             />
           </div>

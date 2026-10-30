@@ -64,7 +64,7 @@ test.afterEach(async () => {
 });
 
 test('create template, generate report, edit and export Markdown', async () => {
-  const composer = page.getByPlaceholder('快速添加任务，回车创建');
+  const composer = page.getByLabel('快速添加任务');
   await composer.fill('完成周报模块');
   await composer.press('Enter');
   await expect(page.getByPlaceholder('任务标题')).toHaveValue('完成周报模块');
