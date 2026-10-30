@@ -119,6 +119,7 @@ create table public.team_task_events (
 create table public.team_notifications (
   id uuid primary key default gen_random_uuid(),
   team_id uuid not null references public.teams(id) on delete cascade,
+  foreign key (task_id, team_id) references public.team_tasks(id, team_id) on delete cascade,
   user_id uuid not null references auth.users(id),
   type public.team_notification_type not null,
   task_id uuid references public.team_tasks(id) on delete cascade,
