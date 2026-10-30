@@ -70,7 +70,9 @@ returns text language plpgsql security definer set search_path = public as $$
 declare
   v_token text := encode(extensions.gen_random_bytes(32), 'hex');
   v_email text := lower(trim(coalesce(p_email, '')));
+  v_team_id uuid := p_team_id;
 begin
+  perform 1 from public.teams where id = v_team_id for update;
   perform public.assert_team_leader(p_team_id);
   if v_email = '' then raise exception 'INVALID_STATUS'; end if;
   if p_expires_at is null or p_expires_at <= public.epoch_ms() then
@@ -166,6 +168,7 @@ create or replace function public.team_revoke_invite(
 returns void language plpgsql security definer set search_path = public as $$
 declare
   v_team_id uuid;
+  v_invite_team_id uuid;
 begin
   if exists (
     select 1 from public.team_operations
@@ -180,24 +183,31 @@ begin
 
   select team_id into v_team_id
   from public.team_invites
+  where id = p_invite_id;
+  if v_team_id is null then raise exception 'NOT_AUTHORIZED'; end if;
+
+  perform 1 from public.teams where id = v_team_id for update;
+  perform public.assert_team_leader(v_team_id);
+
+  select team_id into v_invite_team_id
+  from public.team_invites
   where id = p_invite_id
     and accepted_at is null
     and revoked_at is null
   for update;
-  if v_team_id is null then
+  if v_invite_team_id is null then
     if exists (
       select 1 from public.team_operations
       where id = p_operation_id
         and user_id = auth.uid()
         and operation_type = 'revoke_invite'
-        and team_id = (select team_id from public.team_invites where id = p_invite_id)
+        and team_id = v_team_id
     ) then
       return;
     end if;
     raise exception 'NOT_AUTHORIZED';
   end if;
 
-  perform public.assert_team_leader(v_team_id);
   if not public.claim_operation(p_operation_id, v_team_id, 'revoke_invite') then
     if exists (
       select 1 from public.team_operations

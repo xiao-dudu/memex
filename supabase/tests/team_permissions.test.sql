@@ -153,6 +153,20 @@ select throws_ok(
   'leader cannot approve own target assignee item'
 );
 
+select set_config('request.jwt.claims', '{"sub":"44444444-4444-4444-8444-444444444444","email":"leader2@example.com"}', true);
+select is(
+  public.team_review_assignee(
+    'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    '11111111-1111-4111-8111-111111111111',
+    3,
+    'approve',
+    null,
+    'a0000000-0000-4000-8000-000000000004'
+  ),
+  4,
+  'another leader can approve the task used for leader reopen checks'
+);
+
 select set_config('request.jwt.claims', '{"sub":"33333333-3333-4333-8333-333333333333","email":"member2@example.com"}', true);
 select throws_ok(
   $$select public.team_start_assignee('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 999, 'b0000000-0000-4000-8000-000000000001')$$,
@@ -517,6 +531,13 @@ select is(
   'member',
   'second leader becomes member'
 );
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-4111-8111-111111111111","email":"leader@example.com"}', true);
+select throws_ok(
+  $$select public.team_reopen_task('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 1, 'a0000000-0000-4000-8000-000000000005')$$,
+  'P0001',
+  'NOT_AUTHORIZED',
+  'demoted task leader blocks reopen'
+);
 select is(
   length(set_config(
     'test.conflict_revoke_token',
@@ -615,6 +636,41 @@ select throws_ok(
 );
 
 select lives_ok(
+  $$select public.team_create_task(
+    '15151515-1515-4515-8515-151515151515',
+    '15151515-1515-4515-8515-151515151516',
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    '移除成员重开任务', null, null, 'medium', null, '{}',
+    array['66666666-6666-4666-8666-666666666666']::uuid[],
+    array['11111111-1111-4111-8111-111111111111']::uuid[]
+  )$$,
+  'leader can create a task for removed-member reopen coverage'
+);
+select set_config('request.jwt.claims', '{"sub":"66666666-6666-4666-8666-666666666666","email":"invitee@example.com"}', true);
+select is(
+  public.team_start_assignee('15151515-1515-4515-8515-151515151516', 1, '15151515-1515-4515-8515-151515151517'),
+  2,
+  'assignee can start the reopen-coverage task'
+);
+select is(
+  public.team_submit_assignee('15151515-1515-4515-8515-151515151516', '提交', 2, '15151515-1515-4515-8515-151515151518'),
+  3,
+  'assignee can submit the reopen-coverage task'
+);
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-4111-8111-111111111111","email":"leader@example.com"}', true);
+select is(
+  public.team_review_assignee(
+    '15151515-1515-4515-8515-151515151516',
+    '66666666-6666-4666-8666-666666666666',
+    3,
+    'approve',
+    null,
+    '15151515-1515-4515-8515-151515151519'
+  ),
+  4,
+  'leader can approve the reopen-coverage assignment'
+);
+select lives_ok(
   $$select public.team_remove_member('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '66666666-6666-4666-8666-666666666666', '44444444-4444-4444-8444-444444444454')$$,
   'leader can remove a member without unfinished work'
 );
@@ -628,6 +684,12 @@ select is(
 select lives_ok(
   $$select public.team_remove_member('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '66666666-6666-4666-8666-666666666666', '44444444-4444-4444-8444-444444444454')$$,
   'duplicate remove operation is idempotent'
+);
+select throws_ok(
+  $$select public.team_reopen_task('15151515-1515-4515-8515-151515151516', 1, '15151515-1515-4515-8515-151515151520')$$,
+  'P0001',
+  'NOT_AUTHORIZED',
+  'removed approved assignee blocks reopen'
 );
 
 select set_config('request.jwt.claims', '{"sub":"55555555-5555-4555-8555-555555555555","email":"creator@example.com"}', true);
@@ -659,13 +721,58 @@ select throws_ok(
 );
 
 reset role;
+with defs as (
+  select
+    'perform 1 from public.teams where id = v_team_id for update;'::text as lock_marker,
+    pg_get_functiondef('public.team_create_task(uuid,uuid,uuid,text,text,text,text,bigint,text[],uuid[],uuid[])'::regprocedure) as create_task_def,
+    pg_get_functiondef('public.team_update_task(uuid,uuid,integer,text,text,text,text,bigint,text[],uuid[],uuid[])'::regprocedure) as update_task_def,
+    pg_get_functiondef('public.team_start_assignee(uuid,integer,uuid)'::regprocedure) as start_assignee_def,
+    pg_get_functiondef('public.team_add_progress_note(uuid,text,uuid)'::regprocedure) as add_note_def,
+    pg_get_functiondef('public.team_submit_assignee(uuid,text,integer,uuid)'::regprocedure) as submit_assignee_def,
+    pg_get_functiondef('public.team_review_assignee(uuid,uuid,integer,text,text,uuid)'::regprocedure) as review_assignee_def,
+    pg_get_functiondef('public.team_reopen_task(uuid,integer,uuid)'::regprocedure) as reopen_task_def,
+    pg_get_functiondef('public.team_archive_task(uuid,integer,uuid)'::regprocedure) as archive_task_def,
+    pg_get_functiondef('public.team_close_assignee(uuid,uuid,text,integer,uuid)'::regprocedure) as close_assignee_def,
+    pg_get_functiondef('public.team_create_invite(uuid,text,bigint,uuid)'::regprocedure) as create_invite_def,
+    pg_get_functiondef('public.team_revoke_invite(uuid,uuid)'::regprocedure) as revoke_invite_def
+)
 select ok(
-  position('perform 1 from public.teams where id = v_team_id for update;' in pg_get_functiondef('public.team_create_task(uuid,uuid,uuid,text,text,text,text,bigint,text[],uuid[],uuid[])'::regprocedure)) > 0
-  and position('perform 1 from public.teams where id = v_team_id for update;' in pg_get_functiondef('public.team_update_task(uuid,uuid,integer,text,text,text,text,bigint,text[],uuid[],uuid[])'::regprocedure)) > 0
-  and position('perform 1 from public.teams where id = v_team_id for update;' in pg_get_functiondef('public.team_reopen_task(uuid,integer,uuid)'::regprocedure)) > 0
-  and position('perform 1 from public.teams where id = v_team_id for update;' in pg_get_functiondef('public.team_close_assignee(uuid,uuid,text,integer,uuid)'::regprocedure)) > 0,
-  'task RPCs lock team rows before assignment/leadership validation'
-);
+  position(lock_marker in create_task_def) > 0
+  and position(lock_marker in create_task_def) < position('perform public.assert_team_leader' in create_task_def)
+  and position(lock_marker in create_task_def) < position('insert into public.team_tasks' in create_task_def)
+  and position(lock_marker in update_task_def) > 0
+  and position(lock_marker in update_task_def) < position('perform public.assert_task_editor' in update_task_def)
+  and position(lock_marker in update_task_def) < position('from public.team_tasks where id = p_task_id for update' in update_task_def)
+  and position(lock_marker in start_assignee_def) > 0
+  and position(lock_marker in start_assignee_def) < position('if not public.is_team_member' in start_assignee_def)
+  and position(lock_marker in start_assignee_def) < position('from public.team_task_assignees' in start_assignee_def)
+  and position(lock_marker in add_note_def) > 0
+  and position(lock_marker in add_note_def) < position('if not public.is_team_member' in add_note_def)
+  and position(lock_marker in add_note_def) < position('from public.team_task_assignees' in add_note_def)
+  and position(lock_marker in submit_assignee_def) > 0
+  and position(lock_marker in submit_assignee_def) < position('if not public.is_team_member' in submit_assignee_def)
+  and position(lock_marker in submit_assignee_def) < position('from public.team_task_assignees' in submit_assignee_def)
+  and position(lock_marker in review_assignee_def) > 0
+  and position(lock_marker in review_assignee_def) < position('if not public.is_task_approver' in review_assignee_def)
+  and position(lock_marker in review_assignee_def) < position('from public.team_task_assignees' in review_assignee_def)
+  and position(lock_marker in reopen_task_def) > 0
+  and position(lock_marker in reopen_task_def) < position('perform public.assert_task_editor' in reopen_task_def)
+  and position(lock_marker in reopen_task_def) < position('from public.team_tasks where id = p_task_id for update' in reopen_task_def)
+  and position(lock_marker in archive_task_def) > 0
+  and position(lock_marker in archive_task_def) < position('perform public.assert_task_editor' in archive_task_def)
+  and position(lock_marker in archive_task_def) < position('from public.team_tasks where id = p_task_id for update' in archive_task_def)
+  and position(lock_marker in close_assignee_def) > 0
+  and position(lock_marker in close_assignee_def) < position('perform public.assert_task_editor' in close_assignee_def)
+  and position(lock_marker in close_assignee_def) < position('from public.team_task_assignees' in close_assignee_def)
+  and position(lock_marker in create_invite_def) > 0
+  and position(lock_marker in create_invite_def) < position('perform public.assert_team_leader' in create_invite_def)
+  and position(lock_marker in create_invite_def) < position('insert into public.team_invites' in create_invite_def)
+  and position(lock_marker in revoke_invite_def) > 0
+  and position(lock_marker in revoke_invite_def) < position('perform public.assert_team_leader' in revoke_invite_def)
+  and position('from public.team_invites' in substring(revoke_invite_def from position(lock_marker in revoke_invite_def))) > 0,
+  'team-row locks precede task/assignee/invite locks and auth rechecks'
+)
+from defs;
 select ok(
   position('v_team_inserted boolean := false' in pg_get_functiondef('public.team_create_team(uuid,text,text,uuid)'::regprocedure)) > 0
   and position('delete from public.teams where id = p_team_id' in pg_get_functiondef('public.team_create_team(uuid,text,text,uuid)'::regprocedure)) > 0,

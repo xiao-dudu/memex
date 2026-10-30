@@ -162,26 +162,22 @@ create or replace function public.team_create_task(
 returns uuid language plpgsql security definer set search_path = public as $$
 declare v_creator uuid := auth.uid(); v_team_id uuid := p_team_id;
 begin
+  perform 1 from public.teams where id = v_team_id for update;
   perform public.assert_team_leader(p_team_id);
   if not public.claim_operation(p_operation_id, p_team_id, 'team_create_task') then
     return (public.operation_result(p_operation_id, 'team_create_task') #>> '{}')::uuid;
   end if;
-  perform 1 from public.teams where id = v_team_id for update;
   if p_leader_ids is null or cardinality(p_leader_ids) = 0 then raise exception 'APPROVER_REQUIRED'; end if;
   if p_assignee_ids is null or cardinality(p_assignee_ids) = 0 then raise exception 'INVALID_STATUS'; end if;
   perform public.validate_task_approvers(p_team_id, v_creator, p_assignee_ids, p_leader_ids);
   perform public.validate_team_users(p_team_id, p_assignee_ids, null);
   perform public.validate_team_users(p_team_id, p_leader_ids, 'leader');
-
   insert into public.team_tasks(id, team_id, title, description, description_json, priority, due_at, tags, created_by)
   values (p_task_id, p_team_id, p_title, p_description, p_description_json, coalesce(p_priority, 'medium'), p_due_at, coalesce(p_tags, '{}'), v_creator);
-
   insert into public.team_task_leaders(task_id, team_id, user_id)
   select p_task_id, p_team_id, unnest(p_leader_ids);
-
   insert into public.team_task_assignees(task_id, team_id, user_id)
   select p_task_id, p_team_id, unnest(p_assignee_ids);
-
   perform public.emit_task_event(p_task_id, 'created');
   perform public.notify_task_users(p_task_id, 'assigned', '收到新任务', p_title, p_assignee_ids);
   update public.team_operations
@@ -207,21 +203,23 @@ create or replace function public.team_update_task(
 returns integer language plpgsql security definer set search_path = public as $$
 declare v_team_id uuid; v_creator uuid; v_version integer; v_next_version integer;
 begin
+  select team_id into v_team_id from public.team_tasks where id = p_task_id;
+  if v_team_id is null then raise exception 'NOT_AUTHORIZED'; end if;
+  perform 1 from public.teams where id = v_team_id for update;
   perform public.assert_task_editor(p_task_id);
   perform public.assert_task_open(p_task_id);
-  select team_id, created_by, version into v_team_id, v_creator, v_version
+  select created_by, version into v_creator, v_version
   from public.team_tasks where id = p_task_id for update;
+  if v_version is null then raise exception 'NOT_AUTHORIZED'; end if;
   if not public.claim_operation(p_operation_id, v_team_id, 'team_update_task') then
     return (public.operation_result(p_operation_id, 'team_update_task') #>> '{}')::integer;
   end if;
   if v_version <> p_expected_version then raise exception 'VERSION_CONFLICT'; end if;
-  perform 1 from public.teams where id = v_team_id for update;
   if p_leader_ids is null or cardinality(p_leader_ids) = 0 then raise exception 'APPROVER_REQUIRED'; end if;
   if p_assignee_ids is null or cardinality(p_assignee_ids) = 0 then raise exception 'INVALID_STATUS'; end if;
   perform public.validate_task_approvers(v_team_id, v_creator, p_assignee_ids, p_leader_ids);
   perform public.validate_team_users(v_team_id, p_assignee_ids, null);
   perform public.validate_team_users(v_team_id, p_leader_ids, 'leader');
-
   if exists (
     select 1 from public.team_task_assignees
     where task_id = p_task_id
@@ -230,7 +228,6 @@ begin
   ) then
     raise exception 'UNFINISHED_ASSIGNMENTS';
   end if;
-
   if not exists (
     select 1 from public.team_task_assignees
     where task_id = p_task_id and status not in ('approved', 'closed')
@@ -254,7 +251,6 @@ begin
   ) then
     raise exception 'INVALID_STATUS';
   end if;
-
   v_next_version := v_version + 1;
   update public.team_tasks
   set title = p_title,
@@ -265,18 +261,14 @@ begin
       tags = coalesce(p_tags, '{}'),
       version = v_next_version
   where id = p_task_id;
-
   delete from public.team_task_leaders where task_id = p_task_id;
   insert into public.team_task_leaders(task_id, team_id, user_id)
   select p_task_id, v_team_id, unnest(p_leader_ids);
-
   insert into public.team_task_assignees(task_id, team_id, user_id)
   select p_task_id, v_team_id, unnest(p_assignee_ids)
   on conflict (task_id, user_id) do nothing;
-
   delete from public.team_task_assignees
   where task_id = p_task_id and not (user_id = any(p_assignee_ids));
-
   perform public.emit_task_event(p_task_id, 'assigned');
   update public.team_operations
   set result_json = to_jsonb(v_next_version)
@@ -293,13 +285,16 @@ create or replace function public.team_start_assignee(
 returns integer language plpgsql security definer set search_path = public as $$
 declare v_team_id uuid; v_status public.team_assignee_status; v_version integer; v_next_version integer;
 begin
+  select team_id into v_team_id from public.team_tasks where id = p_task_id;
+  if v_team_id is null then raise exception 'NOT_AUTHORIZED'; end if;
+  perform 1 from public.teams where id = v_team_id for update;
   perform public.assert_task_open(p_task_id);
-  select team_id, status, version into v_team_id, v_status, v_version
+  if not public.is_team_member(v_team_id) then raise exception 'NOT_AUTHORIZED'; end if;
+  select status, version into v_status, v_version
   from public.team_task_assignees
   where task_id = p_task_id and user_id = auth.uid()
   for update;
   if v_status is null then raise exception 'NOT_AUTHORIZED'; end if;
-  if not public.is_team_member(v_team_id) then raise exception 'NOT_AUTHORIZED'; end if;
   if not public.claim_operation(p_operation_id, v_team_id, 'team_start_assignee') then
     return (public.operation_result(p_operation_id, 'team_start_assignee') #>> '{}')::integer;
   end if;
@@ -325,12 +320,15 @@ create or replace function public.team_add_progress_note(
 returns uuid language plpgsql security definer set search_path = public as $$
 declare v_team_id uuid; v_note_id uuid := gen_random_uuid();
 begin
-  perform public.assert_task_open(p_task_id);
   select team_id into v_team_id from public.team_tasks where id = p_task_id;
+  if v_team_id is null then raise exception 'NOT_AUTHORIZED'; end if;
+  perform 1 from public.teams where id = v_team_id for update;
+  perform public.assert_task_open(p_task_id);
   if not public.is_team_member(v_team_id) then raise exception 'NOT_AUTHORIZED'; end if;
-  if not exists (select 1 from public.team_task_assignees where task_id = p_task_id and user_id = auth.uid()) then
-    raise exception 'NOT_AUTHORIZED';
-  end if;
+  perform 1 from public.team_task_assignees
+  where task_id = p_task_id and user_id = auth.uid()
+  for update;
+  if not found then raise exception 'NOT_AUTHORIZED'; end if;
   if not public.claim_operation(p_operation_id, v_team_id, 'team_add_progress_note') then
     return (public.operation_result(p_operation_id, 'team_add_progress_note') #>> '{}')::uuid;
   end if;
@@ -352,13 +350,16 @@ create or replace function public.team_submit_assignee(
 returns integer language plpgsql security definer set search_path = public as $$
 declare v_team_id uuid; v_status public.team_assignee_status; v_version integer; v_next_version integer;
 begin
+  select team_id into v_team_id from public.team_tasks where id = p_task_id;
+  if v_team_id is null then raise exception 'NOT_AUTHORIZED'; end if;
+  perform 1 from public.teams where id = v_team_id for update;
   perform public.assert_task_open(p_task_id);
-  select team_id, status, version into v_team_id, v_status, v_version
+  if not public.is_team_member(v_team_id) then raise exception 'NOT_AUTHORIZED'; end if;
+  select status, version into v_status, v_version
   from public.team_task_assignees
   where task_id = p_task_id and user_id = auth.uid()
   for update;
   if v_status is null then raise exception 'NOT_AUTHORIZED'; end if;
-  if not public.is_team_member(v_team_id) then raise exception 'NOT_AUTHORIZED'; end if;
   if not public.claim_operation(p_operation_id, v_team_id, 'team_submit_assignee') then
     return (public.operation_result(p_operation_id, 'team_submit_assignee') #>> '{}')::integer;
   end if;
@@ -395,14 +396,16 @@ create or replace function public.team_review_assignee(
 returns integer language plpgsql security definer set search_path = public as $$
 declare v_team_id uuid; v_status public.team_assignee_status; v_version integer; v_next public.team_assignee_status; v_next_version integer;
 begin
+  select team_id into v_team_id from public.team_tasks where id = p_task_id;
+  if v_team_id is null then raise exception 'NOT_AUTHORIZED'; end if;
+  perform 1 from public.teams where id = v_team_id for update;
   perform public.assert_task_open(p_task_id);
   if not public.is_task_approver(p_task_id) then raise exception 'NOT_AUTHORIZED'; end if;
   if p_assignee_id = auth.uid() then raise exception 'SELF_APPROVAL_FORBIDDEN'; end if;
-  select team_id, status, version into v_team_id, v_status, v_version
+  select status, version into v_status, v_version
   from public.team_task_assignees
   where task_id = p_task_id and user_id = p_assignee_id
   for update;
-  perform 1 from public.teams where id = v_team_id for update;
   if v_status is null then raise exception 'NOT_AUTHORIZED'; end if;
   if not public.claim_operation(p_operation_id, v_team_id, 'team_review_assignee') then
     return (public.operation_result(p_operation_id, 'team_review_assignee') #>> '{}')::integer;
@@ -412,19 +415,16 @@ begin
   if p_decision not in ('approve', 'return') then raise exception 'INVALID_STATUS'; end if;
   v_next := case when p_decision = 'approve' then 'approved'::public.team_assignee_status else 'doing'::public.team_assignee_status end;
   v_next_version := v_version + 1;
-
   if p_note is not null and char_length(trim(p_note)) > 0 then
     insert into public.team_task_progress_notes(task_id, team_id, user_id, body)
     values (p_task_id, v_team_id, auth.uid(), trim(p_note));
   end if;
-
   update public.team_task_assignees
   set status = v_next,
       approved_by = case when v_next = 'approved' then auth.uid() else null end,
       approved_at = case when v_next = 'approved' then public.epoch_ms() else null end,
       version = v_next_version
   where task_id = p_task_id and user_id = p_assignee_id;
-
   perform public.emit_task_event(p_task_id, case when v_next = 'approved' then 'approved'::public.team_event_type else 'returned'::public.team_event_type end, p_assignee_id, v_status, v_next);
   perform public.notify_task_users(
     p_task_id,
@@ -433,7 +433,6 @@ begin
     (select title from public.team_tasks where id = p_task_id),
     array[p_assignee_id]
   );
-
   if not exists (select 1 from public.team_task_assignees where task_id = p_task_id and status not in ('approved', 'closed')) then
     perform public.notify_task_users(
       p_task_id, 'task_completed', '团队任务已完成',
@@ -456,16 +455,39 @@ create or replace function public.team_reopen_task(
 returns integer language plpgsql security definer set search_path = public as $$
 declare v_team_id uuid; v_version integer; v_next_version integer;
 begin
+  select team_id into v_team_id from public.team_tasks where id = p_task_id;
+  if v_team_id is null then raise exception 'NOT_AUTHORIZED'; end if;
+  perform 1 from public.teams where id = v_team_id for update;
   perform public.assert_task_editor(p_task_id);
-  select team_id, version into v_team_id, v_version
+  select version into v_version
   from public.team_tasks where id = p_task_id for update;
+  if v_version is null then raise exception 'NOT_AUTHORIZED'; end if;
   if not public.claim_operation(p_operation_id, v_team_id, 'team_reopen_task') then
     return (public.operation_result(p_operation_id, 'team_reopen_task') #>> '{}')::integer;
   end if;
   if v_version <> p_expected_version then raise exception 'VERSION_CONFLICT'; end if;
-  perform 1 from public.teams where id = v_team_id for update;
   if exists (select 1 from public.team_task_assignees where task_id = p_task_id and status not in ('approved', 'closed')) then
     raise exception 'INVALID_STATUS';
+  end if;
+  if exists (
+    select 1 from public.team_task_assignees a
+    where a.task_id = p_task_id and a.status = 'approved'
+      and not exists (
+        select 1 from public.team_members m
+        where m.team_id = v_team_id and m.user_id = a.user_id and m.status = 'active'
+      )
+  ) then
+    raise exception 'NOT_AUTHORIZED';
+  end if;
+  if exists (
+    select 1 from public.team_task_leaders l
+    where l.task_id = p_task_id and l.team_id = v_team_id
+      and not exists (
+        select 1 from public.team_members m
+        where m.team_id = v_team_id and m.user_id = l.user_id and m.status = 'active' and m.role = 'leader'
+      )
+  ) then
+    raise exception 'NOT_AUTHORIZED';
   end if;
   v_next_version := v_version + 1;
   update public.team_task_assignees set status = 'doing', version = version + 1
@@ -492,9 +514,13 @@ create or replace function public.team_archive_task(
 returns integer language plpgsql security definer set search_path = public as $$
 declare v_team_id uuid; v_version integer; v_next_version integer;
 begin
+  select team_id into v_team_id from public.team_tasks where id = p_task_id;
+  if v_team_id is null then raise exception 'NOT_AUTHORIZED'; end if;
+  perform 1 from public.teams where id = v_team_id for update;
   perform public.assert_task_editor(p_task_id);
-  select team_id, version into v_team_id, v_version
+  select version into v_version
   from public.team_tasks where id = p_task_id for update;
+  if v_version is null then raise exception 'NOT_AUTHORIZED'; end if;
   if not public.claim_operation(p_operation_id, v_team_id, 'team_archive_task') then
     return (public.operation_result(p_operation_id, 'team_archive_task') #>> '{}')::integer;
   end if;
@@ -519,13 +545,15 @@ create or replace function public.team_close_assignee(
 returns integer language plpgsql security definer set search_path = public as $$
 declare v_team_id uuid; v_status public.team_assignee_status; v_version integer; v_next_version integer;
 begin
+  select team_id into v_team_id from public.team_tasks where id = p_task_id;
+  if v_team_id is null then raise exception 'NOT_AUTHORIZED'; end if;
+  perform 1 from public.teams where id = v_team_id for update;
   perform public.assert_task_editor(p_task_id);
   perform public.assert_task_open(p_task_id);
-  select team_id, status, version into v_team_id, v_status, v_version
+  select status, version into v_status, v_version
   from public.team_task_assignees
   where task_id = p_task_id and user_id = p_assignee_id
   for update;
-  perform 1 from public.teams where id = v_team_id for update;
   if v_status is null then raise exception 'NOT_AUTHORIZED'; end if;
   if not public.claim_operation(p_operation_id, v_team_id, 'team_close_assignee') then
     return (public.operation_result(p_operation_id, 'team_close_assignee') #>> '{}')::integer;
