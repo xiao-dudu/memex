@@ -13,9 +13,16 @@ interface Props {
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
-interface PendingDraft {
-  taskId: string;
-  value: RichTextChange;
+export interface TeamTaskDescriptionDraft {
+  contentJson: string;
+  plainText: string;
+  error: string | null;
+}
+
+const descriptionDrafts = new Map<string, TeamTaskDescriptionDraft>();
+
+export function clearTeamTaskDescriptionDrafts(): void {
+  descriptionDrafts.clear();
 }
 
 function initialDocument(task: TeamTask): string {
@@ -36,6 +43,10 @@ function readOnlyText(task: TeamTask): string {
   return '暂无描述';
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export function canEditTeamTask(task: TeamTask, session: TeamSessionInfo): boolean {
   if (task.archivedAt !== null || session.role !== 'leader') return false;
   return (
@@ -50,20 +61,21 @@ export function TeamTaskDescriptionDrawer({ task, open, onClose }: Props) {
   const storedVersion = useTeamStore((state) =>
     state.activeTask?.id === task.id ? state.activeTask.version : task.version,
   );
-  const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [saveState, setSaveState] = useState<SaveState>(() =>
+    descriptionDrafts.get(task.id)?.error ? 'error' : 'idle',
+  );
   const timerRef = useRef<number | null>(null);
   const idleTimerRef = useRef<number | null>(null);
-  const pendingRef = useRef<PendingDraft | null>(null);
-  const savingRef = useRef(false);
+  const inFlightTaskRef = useRef<string | null>(null);
   const versionsRef = useRef<Record<string, number>>({});
   const activeTaskIdRef = useRef(task.id);
   versionsRef.current[task.id] = storedVersion;
   activeTaskIdRef.current = task.id;
 
-  const document = useMemo(
-    () => initialDocument(task),
-    [task.id, task.description, task.descriptionJson],
-  );
+  const document = useMemo(() => {
+    const pending = descriptionDrafts.get(task.id);
+    return pending?.contentJson ?? initialDocument(task);
+  }, [task.id, task.description, task.descriptionJson, open]);
   const canEdit = canEditTeamTask(task, session);
 
   const clearTimer = () => {
@@ -72,8 +84,6 @@ export function TeamTaskDescriptionDrawer({ task, open, onClose }: Props) {
       timerRef.current = null;
     }
   };
-
-  const pendingTaskId = () => pendingRef.current?.taskId ?? null;
 
   const currentVersion = (taskId: string) => {
     const active = useTeamStore.getState().activeTask;
@@ -84,65 +94,81 @@ export function TeamTaskDescriptionDrawer({ task, open, onClose }: Props) {
     return versionsRef.current[taskId] ?? task.version;
   };
 
+  const nextPendingTaskId = () => {
+    for (const [taskId, draft] of descriptionDrafts) {
+      if (!draft.error) return taskId;
+    }
+    return null;
+  };
+
   const scheduleIdle = () => {
     if (idleTimerRef.current !== null) window.clearTimeout(idleTimerRef.current);
     idleTimerRef.current = window.setTimeout(() => setSaveState('idle'), 1200);
   };
 
-  const drain = async (taskId: string) => {
-    if (savingRef.current) return;
-    const pending = pendingRef.current;
-    if (!pending || pending.taskId !== taskId) return;
+  const drain = async (taskId: string, retryError = false) => {
+    if (inFlightTaskRef.current !== null) return;
+    const draft = descriptionDrafts.get(taskId);
+    if (!draft || (draft.error && !retryError)) return;
 
-    pendingRef.current = null;
-    savingRef.current = true;
+    if (draft.error) descriptionDrafts.set(taskId, { ...draft, error: null });
+    inFlightTaskRef.current = taskId;
     if (activeTaskIdRef.current === taskId) setSaveState('saving');
 
     try {
       await updateTask(taskId, {
-        description: pending.value.plainText,
-        descriptionJson: pending.value.contentJson,
+        description: draft.plainText,
+        descriptionJson: draft.contentJson,
         expectedVersion: currentVersion(taskId),
       });
       const active = useTeamStore.getState().activeTask;
       if (active?.id === taskId) versionsRef.current[taskId] = active.version;
-    } catch {
-      if (!pendingRef.current) pendingRef.current = pending;
-      savingRef.current = false;
+    } catch (error) {
+      const current = descriptionDrafts.get(taskId);
+      if (current) descriptionDrafts.set(taskId, { ...current, error: errorMessage(error) });
+      inFlightTaskRef.current = null;
       if (activeTaskIdRef.current === taskId) setSaveState('error');
       return;
     }
 
-    savingRef.current = false;
-    const nextTaskId = pendingTaskId();
-    if (nextTaskId) {
-      void drain(nextTaskId);
-      return;
-    }
+    inFlightTaskRef.current = null;
+    const current = descriptionDrafts.get(taskId);
+    if (current?.contentJson === draft.contentJson) descriptionDrafts.delete(taskId);
+
     if (activeTaskIdRef.current === taskId) {
-      setSaveState('saved');
-      scheduleIdle();
+      if (current?.contentJson === draft.contentJson || !current) {
+        setSaveState('saved');
+        scheduleIdle();
+      } else {
+        setSaveState('saving');
+      }
     }
+
+    const nextTaskId = nextPendingTaskId();
+    if (nextTaskId) void drain(nextTaskId);
   };
 
-  const flush = (taskId = task.id) => {
+  const flush = (taskId = task.id, retryError = false) => {
     clearTimer();
-    if (savingRef.current) return;
-    void drain(taskId);
+    if (inFlightTaskRef.current !== null) return;
+    void drain(taskId, retryError);
   };
 
   const handleClose = () => {
-    flush();
+    if (!descriptionDrafts.get(task.id)?.error) flush();
     onClose();
   };
 
   useEffect(() => {
-    setSaveState('idle');
-  }, [task.id]);
+    const draft = descriptionDrafts.get(task.id);
+    setSaveState(draft?.error ? 'error' : draft ? 'saving' : 'idle');
+    if (open && draft && !draft.error) flush(task.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task.id, open]);
 
   useEffect(() => {
     return () => {
-      flush(task.id);
+      if (!descriptionDrafts.get(task.id)?.error) flush(task.id);
       if (idleTimerRef.current !== null) {
         window.clearTimeout(idleTimerRef.current);
         idleTimerRef.current = null;
@@ -167,7 +193,7 @@ export function TeamTaskDescriptionDrawer({ task, open, onClose }: Props) {
                 type="button"
                 aria-label="重试保存"
                 className="text-[var(--accent)]"
-                onClick={() => flush()}
+                onClick={() => flush(task.id, true)}
               >
                 重试保存
               </button>
@@ -191,7 +217,11 @@ export function TeamTaskDescriptionDrawer({ task, open, onClose }: Props) {
                 window.clearTimeout(idleTimerRef.current);
                 idleTimerRef.current = null;
               }
-              pendingRef.current = { taskId: task.id, value };
+              descriptionDrafts.set(task.id, {
+                contentJson: value.contentJson,
+                plainText: value.plainText,
+                error: null,
+              });
               setSaveState('saving');
               clearTimer();
               timerRef.current = window.setTimeout(() => flush(task.id), 500);

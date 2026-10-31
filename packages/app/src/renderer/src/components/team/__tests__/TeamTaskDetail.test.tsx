@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TeamMember, TeamTask, TeamTaskEvent } from '@memex/shared';
 import { createTeamStore, useTeamStore, type TeamState } from '../../../store/useTeamStore';
+import { clearTeamTaskDescriptionDrafts } from '../TeamTaskDescriptionDrawer';
 import { TeamTaskDetail } from '../TeamTaskDetail';
 
 vi.mock('../../editor/RichTextEditor', async () => {
@@ -16,15 +17,17 @@ vi.mock('../../editor/RichTextEditor', async () => {
   });
   return {
     RichTextEditor: ({
+      contentJson,
       onChange,
       onBlur,
     }: {
+      contentJson: string;
       onChange: (value: { plainText: string; contentJson: string }) => void;
       onBlur?: () => void;
     }) =>
       createElement(
         'div',
-        { 'data-testid': 'rich-text-editor' },
+        { 'data-testid': 'rich-text-editor', 'data-content-json': contentJson },
         createElement(
           'button',
           { type: 'button', 'aria-label': '写入草稿一', onClick: () => onChange(change('草稿一')) },
@@ -103,6 +106,13 @@ const task: TeamTask = {
   ],
 };
 
+const task2: TeamTask = {
+  ...task,
+  id: '22222222-2222-4222-8222-222222222222',
+  title: '第二任务',
+  description: '第二描述',
+};
+
 const event = (overrides: Partial<TeamTaskEvent>): TeamTaskEvent => ({
   id: 'e1',
   taskId: task.id,
@@ -157,6 +167,7 @@ function resetStore(overrides: Partial<TeamState> = {}) {
 }
 
 beforeEach(() => {
+  clearTeamTaskDescriptionDrafts();
   resetStore();
 });
 
@@ -261,6 +272,127 @@ describe('TeamTaskDetail', () => {
         task.id,
         expect.objectContaining({ description: '草稿一', expectedVersion: 3 }),
       ),
+    );
+  });
+
+  it('recovers a draft when a close-time save fails after the drawer closes', async () => {
+    const firstSave = deferred<void>();
+    const updateTask = vi.fn().mockReturnValueOnce(firstSave.promise);
+    resetStore({ updateTask });
+    render(<TeamTaskDetail />);
+
+    await userEvent.click(screen.getByRole('button', { name: '打开团队任务描述' }));
+    await userEvent.click(screen.getByRole('button', { name: '写入草稿一' }));
+    await userEvent.click(screen.getByRole('button', { name: '保存描述草稿' }));
+    expect(updateTask).toHaveBeenCalledTimes(1);
+
+    await userEvent.click(screen.getByRole('button', { name: '关闭' }));
+    await act(async () => {
+      firstSave.reject(new Error('VERSION_CONFLICT'));
+      try {
+        await firstSave.promise;
+      } catch {
+        // The drawer handles the failed write and persists the draft.
+      }
+    });
+    expect(updateTask).toHaveBeenCalledTimes(1);
+
+    await userEvent.click(screen.getByRole('button', { name: '打开团队任务描述' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('保存失败，请重试');
+    expect(screen.getByTestId('rich-text-editor').getAttribute('data-content-json')).toContain(
+      '草稿一',
+    );
+  });
+
+  it('isolates pending drafts when switching tasks', async () => {
+    const updateTask = vi.fn().mockRejectedValue(new Error('VERSION_CONFLICT'));
+    resetStore({ tasks: [task, task2], updateTask });
+    render(<TeamTaskDetail />);
+
+    await userEvent.click(screen.getByRole('button', { name: '打开团队任务描述' }));
+    await userEvent.click(screen.getByRole('button', { name: '写入草稿一' }));
+    await userEvent.click(screen.getByRole('button', { name: '保存描述草稿' }));
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('保存失败，请重试'),
+    );
+    await userEvent.click(screen.getByRole('button', { name: '关闭' }));
+
+    act(() => {
+      useTeamStore.setState({ activeTask: task2 });
+    });
+    await userEvent.click(screen.getByRole('button', { name: '打开团队任务描述' }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByTestId('rich-text-editor').getAttribute('data-content-json')).toContain(
+      '第二描述',
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: '写入草稿二' }));
+    await userEvent.click(screen.getByRole('button', { name: '保存描述草稿' }));
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('保存失败，请重试'),
+    );
+    await userEvent.click(screen.getByRole('button', { name: '关闭' }));
+
+    act(() => {
+      useTeamStore.setState({ activeTask: task });
+    });
+    await userEvent.click(screen.getByRole('button', { name: '打开团队任务描述' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('保存失败，请重试');
+    expect(screen.getByTestId('rich-text-editor').getAttribute('data-content-json')).toContain(
+      '草稿一',
+    );
+  });
+
+  it('clears only the retried task draft after a successful retry', async () => {
+    const updateTask = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('VERSION_CONFLICT'))
+      .mockRejectedValueOnce(new Error('VERSION_CONFLICT'))
+      .mockResolvedValueOnce(undefined);
+    resetStore({ tasks: [task, task2], updateTask });
+    render(<TeamTaskDetail />);
+
+    await userEvent.click(screen.getByRole('button', { name: '打开团队任务描述' }));
+    await userEvent.click(screen.getByRole('button', { name: '写入草稿一' }));
+    await userEvent.click(screen.getByRole('button', { name: '保存描述草稿' }));
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('保存失败，请重试'),
+    );
+    await userEvent.click(screen.getByRole('button', { name: '关闭' }));
+
+    act(() => {
+      useTeamStore.setState({ activeTask: task2 });
+    });
+    await userEvent.click(screen.getByRole('button', { name: '打开团队任务描述' }));
+    await userEvent.click(screen.getByRole('button', { name: '写入草稿二' }));
+    await userEvent.click(screen.getByRole('button', { name: '保存描述草稿' }));
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('保存失败，请重试'),
+    );
+    await userEvent.click(screen.getByRole('button', { name: '关闭' }));
+
+    act(() => {
+      useTeamStore.setState({ activeTask: task });
+    });
+    await userEvent.click(screen.getByRole('button', { name: '打开团队任务描述' }));
+    await userEvent.click(screen.getByRole('button', { name: '重试保存' }));
+    await waitFor(() => expect(updateTask).toHaveBeenCalledTimes(3));
+    await userEvent.click(screen.getByRole('button', { name: '关闭' }));
+
+    await userEvent.click(screen.getByRole('button', { name: '打开团队任务描述' }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByTestId('rich-text-editor').getAttribute('data-content-json')).toContain(
+      '需要评审',
+    );
+    await userEvent.click(screen.getByRole('button', { name: '关闭' }));
+
+    act(() => {
+      useTeamStore.setState({ activeTask: task2 });
+    });
+    await userEvent.click(screen.getByRole('button', { name: '打开团队任务描述' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('保存失败，请重试');
+    expect(screen.getByTestId('rich-text-editor').getAttribute('data-content-json')).toContain(
+      '草稿二',
     );
   });
 
