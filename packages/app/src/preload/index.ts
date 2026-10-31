@@ -4,6 +4,7 @@ import { IPC, type MemexApi } from '@memex/shared/ipc';
 const api: MemexApi = {
   team: {
     bootstrap: () => ipcRenderer.invoke(IPC.teamBootstrap),
+    refreshSession: () => ipcRenderer.invoke(IPC.teamRefreshSession),
     signIn: (input) => ipcRenderer.invoke(IPC.teamSignIn, input),
     signUp: (input) => ipcRenderer.invoke(IPC.teamSignUp, input),
     signOut: () => ipcRenderer.invoke(IPC.teamSignOut),
@@ -11,6 +12,7 @@ const api: MemexApi = {
     joinTeam: (input) => ipcRenderer.invoke(IPC.teamJoinTeam, input),
     listTasks: (filter) => ipcRenderer.invoke(IPC.teamTasksList, filter),
     listNotifications: () => ipcRenderer.invoke(IPC.teamNotificationsList),
+    listMembers: () => ipcRenderer.invoke(IPC.teamMembers),
     listMemberEvents: () => ipcRenderer.invoke(IPC.teamMemberEvents),
     getTask: (taskId) => ipcRenderer.invoke(IPC.teamTasksGet, taskId),
     getTaskNotes: (taskId) => ipcRenderer.invoke(IPC.teamTaskNotes, taskId),

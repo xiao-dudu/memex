@@ -108,6 +108,290 @@ function payload(cache: ReturnType<typeof openTeamCache>, type: string): Record<
 }
 
 describe('team service', () => {
+  it('returns all members to a leader', async () => {
+    const { service } = deps();
+
+    const members = await service.listMembers();
+
+    expect(members.map((item) => item.id).sort()).toEqual([
+      leader.id,
+      secondLeader.id,
+      member.id,
+    ].sort());
+  });
+
+  it('limits a member directory to their visible task participants', async () => {
+    const coAssignee = { id: 'member-2', email: 'member2@example.com', displayName: '共同执行人' };
+    const unrelated = { id: 'member-3', email: 'member3@example.com', displayName: '其他成员' };
+    const task = makeTask({
+      assignees: [
+        {
+          ...member,
+          status: 'todo',
+          latestNote: null,
+          approvedBy: null,
+          approvedAt: null,
+          version: 1,
+        },
+        {
+          ...coAssignee,
+          status: 'todo',
+          latestNote: null,
+          approvedBy: null,
+          approvedAt: null,
+          version: 1,
+        },
+      ],
+    });
+    const { service } = deps({
+      session: memberSession,
+      membership: { team_id: teamA, role: 'member' },
+      members: [
+        memberRow(leader, teamA, 'leader'),
+        memberRow(secondLeader, teamA, 'leader'),
+        memberRow(member, teamA, 'member'),
+        memberRow(coAssignee, teamA, 'member'),
+        memberRow(unrelated, teamA, 'member'),
+      ],
+      seed: (cache) => cache.upsertTask(task),
+    });
+
+    const members = await service.listMembers();
+
+    expect(members.map((item) => item.id).sort()).toEqual([
+      leader.id,
+      secondLeader.id,
+      member.id,
+      coAssignee.id,
+    ].sort());
+  });
+
+  it('limits bootstrap members and hides member events from a member', async () => {
+    const coAssignee = { id: 'member-2', email: 'member2@example.com', displayName: '共同执行人' };
+    const unrelated = { id: 'member-3', email: 'member3@example.com', displayName: '其他成员' };
+    const task = makeTask({
+      assignees: [
+        {
+          ...member,
+          status: 'todo',
+          latestNote: null,
+          approvedBy: null,
+          approvedAt: null,
+          version: 1,
+        },
+        {
+          ...coAssignee,
+          status: 'todo',
+          latestNote: null,
+          approvedBy: null,
+          approvedAt: null,
+          version: 1,
+        },
+      ],
+    });
+    const { service } = deps({
+      session: memberSession,
+      membership: { team_id: teamA, role: 'member' },
+      members: [
+        memberRow(leader, teamA, 'leader'),
+        memberRow(secondLeader, teamA, 'leader'),
+        memberRow(member, teamA, 'member'),
+        memberRow(coAssignee, teamA, 'member'),
+        memberRow(unrelated, teamA, 'member'),
+      ],
+      seed: (cache) => {
+        cache.upsertTask(task);
+        cache.upsertMemberEvent({
+          id: 'member-event-1',
+          teamId: teamA,
+          actorId: leader.id,
+          targetUserId: member.id,
+          type: 'removed',
+          createdAt: 2,
+        });
+      },
+    });
+
+    const bootstrapped = await service.bootstrap();
+
+    expect(bootstrapped.members.map((item) => item.id).sort()).toEqual([
+      leader.id,
+      secondLeader.id,
+      member.id,
+      coAssignee.id,
+    ].sort());
+    expect(bootstrapped.memberEvents).toEqual([]);
+  });
+
+  it('includes archived task participants in a member directory', async () => {
+    const coAssignee = { id: 'member-2', email: 'member2@example.com', displayName: '共同执行人' };
+    const unrelated = { id: 'member-3', email: 'member3@example.com', displayName: '其他成员' };
+    const task = makeTask({
+      archivedAt: 5,
+      assignees: [
+        {
+          ...member,
+          status: 'approved',
+          latestNote: null,
+          approvedBy: leader.id,
+          approvedAt: 4,
+          version: 2,
+        },
+        {
+          ...coAssignee,
+          status: 'approved',
+          latestNote: null,
+          approvedBy: leader.id,
+          approvedAt: 4,
+          version: 2,
+        },
+      ],
+    });
+    const { service } = deps({
+      session: memberSession,
+      membership: { team_id: teamA, role: 'member' },
+      members: [
+        memberRow(leader, teamA, 'leader'),
+        memberRow(secondLeader, teamA, 'leader'),
+        memberRow(member, teamA, 'member'),
+        memberRow(coAssignee, teamA, 'member'),
+        memberRow(unrelated, teamA, 'member'),
+      ],
+      seed: (cache) => cache.upsertTask(task),
+    });
+
+    const members = await service.listMembers();
+
+    expect(members.map((item) => item.id).sort()).toEqual([
+      leader.id,
+      secondLeader.id,
+      member.id,
+      coAssignee.id,
+    ].sort());
+  });
+
+  it('resyncs before returning members after a role change clears the cache', async () => {
+    const task = makeTask({
+      assignees: [
+        {
+          ...leader,
+          status: 'todo',
+          latestNote: null,
+          approvedBy: null,
+          approvedAt: null,
+          version: 1,
+        },
+        {
+          ...member,
+          status: 'todo',
+          latestNote: null,
+          approvedBy: null,
+          approvedAt: null,
+          version: 1,
+        },
+      ],
+    });
+    const { service, cache, sync, membership } = deps({
+      seed: (target) => target.upsertTask(task),
+    });
+    await service.bootstrap();
+    membership.mockResolvedValue({ data: { team_id: teamA, role: 'member' }, error: null });
+    sync.syncNow.mockImplementation(async () => {
+      cache.replaceMembers([
+        memberRow(leader, teamA, 'leader'),
+        memberRow(secondLeader, teamA, 'leader'),
+        memberRow(member, teamA, 'member'),
+      ]);
+      cache.upsertTask(task);
+      return { phase: 'idle', pendingCount: 0, lastSyncedAt: 2, message: null };
+    });
+
+    const members = await service.listMembers();
+
+    expect(members.find((item) => item.id === member.id)?.role).toBe('member');
+    expect(members.map((item) => item.id).sort()).toEqual([
+      leader.id,
+      secondLeader.id,
+      member.id,
+    ].sort());
+    expect(sync.syncNow).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects member lookup when role refresh sync cannot restore the current member', async () => {
+    const { service, sync, membership } = deps();
+    await service.bootstrap();
+    membership.mockResolvedValue({ data: { team_id: teamA, role: 'member' }, error: null });
+    sync.syncNow.mockResolvedValue({
+      phase: 'error',
+      pendingCount: 0,
+      lastSyncedAt: null,
+      message: '同步失败',
+    });
+
+    await expect(service.listMembers()).rejects.toMatchObject({ message: '同步失败' });
+  });
+
+  it('uses the role pulled during bootstrap sync instead of the earlier session role', async () => {
+    const task = makeTask({
+      assignees: [
+        {
+          ...leader,
+          status: 'todo',
+          latestNote: null,
+          approvedBy: null,
+          approvedAt: null,
+          version: 1,
+        },
+        {
+          ...member,
+          status: 'todo',
+          latestNote: null,
+          approvedBy: null,
+          approvedAt: null,
+          version: 1,
+        },
+      ],
+    });
+    const { service, cache, sync } = deps({ seed: (target) => target.upsertTask(task) });
+    sync.syncNow.mockImplementation(async () => {
+      cache.replaceMembers([
+        memberRow(leader, teamA, 'member'),
+        memberRow(secondLeader, teamA, 'leader'),
+        memberRow(member, teamA, 'member'),
+      ]);
+      cache.upsertTask(task);
+      cache.upsertMemberEvent({
+        id: 'member-event-1',
+        teamId: teamA,
+        actorId: secondLeader.id,
+        targetUserId: leader.id,
+        type: 'removed',
+        createdAt: 2,
+      });
+      return { phase: 'idle', pendingCount: 0, lastSyncedAt: 2, message: null };
+    });
+
+    const bootstrapped = await service.bootstrap();
+
+    expect(bootstrapped.session.role).toBe('member');
+    expect(bootstrapped.memberEvents).toEqual([]);
+    expect(bootstrapped.members.map((item) => item.id).sort()).toEqual([
+      leader.id,
+      secondLeader.id,
+      member.id,
+    ].sort());
+  });
+
+  it('refreshes the session role from the latest membership', async () => {
+    const { service, membership } = deps();
+    await service.bootstrap();
+    membership.mockResolvedValue({ data: { team_id: teamA, role: 'member' }, error: null });
+
+    const refreshed = await service.refreshSession();
+
+    expect(refreshed.role).toBe('member');
+  });
+
   it('creates a local task and queues the remote operation', async () => {
     const { cache, service } = deps();
     const task = await service.createTask({

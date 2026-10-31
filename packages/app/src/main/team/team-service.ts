@@ -6,6 +6,7 @@ import {
   type TeamInvite,
   type TeamInviteCreateInput,
   type TeamJoinInput,
+  type TeamMember,
   type TeamMemberEvent,
   type TeamNotification,
   type TeamOutboxFailure,
@@ -28,6 +29,7 @@ import type { TeamRemoteApi, TeamSync } from './team-sync.js';
 
 export interface TeamService {
   getSession(): Promise<TeamSessionInfo>;
+  refreshSession(): Promise<TeamSessionInfo>;
   bootstrap(): Promise<TeamBootstrap>;
   signIn(input: TeamSignInInput): Promise<TeamBootstrap>;
   signUp(input: TeamSignUpInput): Promise<{ needsEmailConfirmation: boolean }>;
@@ -36,6 +38,7 @@ export interface TeamService {
   joinTeam(input: TeamJoinInput): Promise<TeamBootstrap>;
   listTasks(filter?: TeamTaskFilter): Promise<TeamTask[]>;
   listNotifications(): Promise<TeamNotification[]>;
+  listMembers(): Promise<TeamMember[]>;
   listMemberEvents(): Promise<TeamMemberEvent[]>;
   getTask(id: string): Promise<TeamTask | null>;
   getTaskNotes(taskId: string): Promise<TeamProgressNote[]>;
@@ -222,6 +225,15 @@ export function createTeamService({
     return session;
   };
 
+  const withCachedRole = (current: ActiveSession): ActiveSession => {
+    const cached = cache.listMembers().find((member) => member.id === current.userId);
+    if (!cached || cached.role === current.role) return current;
+    const updated = { ...current, role: cached.role };
+    session = updated;
+    cache.setSessionInfo(updated);
+    return updated;
+  };
+
   const bootstrap = async (): Promise<TeamBootstrap> => {
     const previous = session;
     const current = await loadSession();
@@ -239,14 +251,15 @@ export function createTeamService({
       };
     }
     const state = await sync.syncNow(current.teamId);
+    const activeSession = withCachedRole(current as ActiveSession);
     emit(state);
     return {
-      session: current,
+      session: activeSession,
       team: cache.getTeam(),
-      members: cache.listMembers(),
-      tasks: cache.listTasks({ view: 'all' }, current.userId!, current.role, now()),
-      notifications: cache.listNotifications(current.userId!),
-      memberEvents: cache.listMemberEvents(),
+      members: visibleMembersFor(activeSession),
+      tasks: cache.listTasks({ view: 'all' }, activeSession.userId, activeSession.role, now()),
+      notifications: cache.listNotifications(activeSession.userId),
+      memberEvents: activeSession.role === 'leader' ? cache.listMemberEvents() : [],
       outboxFailures: cache.listFailed().map(({ id, type, attempts, lastError, createdAt }) => ({
         id,
         type,
@@ -306,6 +319,21 @@ export function createTeamService({
     if (version !== expectedVersion) throw new Error('分项版本已变化，请刷新');
   };
 
+  const visibleMembersFor = (current: Pick<ActiveSession, 'userId' | 'role'>) => {
+    const members = cache.listMembers();
+    if (current.role === 'leader') return members;
+    const visibleIds = new Set<string>([current.userId]);
+    const tasks = [
+      ...cache.listTasks({ view: 'all' }, current.userId, current.role, now()),
+      ...cache.listTasks({ view: 'archived' }, current.userId, current.role, now()),
+    ];
+    for (const task of tasks) {
+      for (const assignee of task.assignees) visibleIds.add(assignee.id);
+      for (const leader of task.leaders) visibleIds.add(leader.id);
+    }
+    return members.filter((member) => visibleIds.has(member.id));
+  };
+
   const activeLeaderIds = () => cache
     .listMembers()
     .filter((member) => member.role === 'leader' && member.removedAt === null)
@@ -347,6 +375,12 @@ export function createTeamService({
   return {
     async getSession() {
       return session.signedIn ? session : loadSession();
+    },
+    async refreshSession() {
+      const previous = session;
+      const current = await loadSession();
+      reconcileCache(current, previous);
+      return current;
     },
     bootstrap,
     async signIn(input) {
@@ -390,6 +424,17 @@ export function createTeamService({
     async listNotifications() {
       const current = await requireSession();
       return cache.listNotifications(current.userId);
+    },
+    async listMembers() {
+      const current = await requireSession();
+      const hasCurrentMember = () => cache.listMembers().some((member) => member.id === current.userId);
+      if (!hasCurrentMember()) {
+        const state = await sync.syncNow(current.teamId);
+        if (!hasCurrentMember()) {
+          throw new Error(state.message ?? '成员信息同步失败，请稍后重试');
+        }
+      }
+      return visibleMembersFor(withCachedRole(current));
     },
     async listMemberEvents() {
       const current = await requireSession();

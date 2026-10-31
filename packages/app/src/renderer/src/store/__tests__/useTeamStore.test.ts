@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   TeamBootstrap,
+  TeamMember,
+  TeamMemberEvent,
   TeamNotification,
   TeamProgressNote,
+  TeamSessionInfo,
   TeamSyncState,
   TeamTask,
   TeamTaskEvent,
@@ -76,6 +79,35 @@ const notification: TeamNotification = {
   createdAt: 1,
 };
 
+const leaderMember: TeamMember = {
+  id: 'leader-1',
+  teamId: task.teamId,
+  email: 'leader@example.com',
+  displayName: '领导',
+  role: 'leader',
+  joinedAt: 1,
+  removedAt: null,
+};
+
+const member: TeamMember = {
+  id: 'member-1',
+  teamId: task.teamId,
+  email: 'm1@example.com',
+  displayName: '成员',
+  role: 'member',
+  joinedAt: 1,
+  removedAt: null,
+};
+
+const memberEvent: TeamMemberEvent = {
+  id: 'member-event-1',
+  teamId: task.teamId,
+  actorId: 'leader-1',
+  targetUserId: 'member-1',
+  type: 'removed',
+  createdAt: 2,
+};
+
 const idleSync: TeamSyncState = { phase: 'idle', pendingCount: 0, lastSyncedAt: 1, message: null };
 
 const bootstrap: TeamBootstrap = {
@@ -126,11 +158,15 @@ function deferred<T>() {
 
 const createTeamApi = () => ({
   bootstrap: vi.fn().mockResolvedValue(bootstrap),
+  refreshSession: vi.fn().mockResolvedValue(bootstrap.session),
   signIn: vi.fn().mockResolvedValue(bootstrap),
   signOut: vi.fn().mockResolvedValue(undefined),
   listTasks: vi.fn().mockResolvedValue([task]),
   listNotifications: vi.fn().mockResolvedValue([]),
+  listMembers: vi.fn().mockResolvedValue([leaderMember]),
+  listMemberEvents: vi.fn().mockResolvedValue([]),
   getTask: vi.fn().mockResolvedValue(task),
+  submitAssignee: vi.fn().mockResolvedValue(undefined),
   getTaskNotes: vi.fn().mockResolvedValue([note]),
   getTaskEvents: vi.fn().mockResolvedValue([event]),
   createTask: vi.fn().mockResolvedValue(task),
@@ -394,6 +430,7 @@ describe('team store', () => {
     team.listTasks.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
 
     const firstReload = store.getState().refresh();
+    await vi.waitFor(() => expect(team.listTasks).toHaveBeenCalledOnce());
     const secondReload = store.getState().refresh();
     second.resolve([otherTask]);
     await secondReload;
@@ -416,6 +453,238 @@ describe('team store', () => {
     await secondSelection;
     first.resolve(task);
     await firstSelection;
+
+    expect(store.getState().activeTask?.id).toBe(otherTask.id);
+  });
+
+  it('refreshes members and member events during reload', async () => {
+    const store = createTeamStore();
+    await store.getState().bootstrap();
+    team.listMembers.mockResolvedValueOnce([leaderMember, member]);
+    team.listMemberEvents.mockResolvedValueOnce([memberEvent]);
+
+    await store.getState().refresh();
+
+    expect(store.getState().members).toEqual([leaderMember, member]);
+    expect(store.getState().memberEvents).toEqual([memberEvent]);
+  });
+
+  it('refreshes the current role when a member is promoted', async () => {
+    team.bootstrap.mockResolvedValueOnce({
+      ...bootstrap,
+      session: {
+        ...bootstrap.session,
+        userId: member.id,
+        email: member.email,
+        displayName: member.displayName,
+        role: 'member',
+      },
+      members: [member],
+    });
+    const store = createTeamStore();
+    await store.getState().bootstrap();
+    team.refreshSession.mockResolvedValueOnce({
+      ...bootstrap.session,
+      userId: member.id,
+      email: member.email,
+      displayName: member.displayName,
+      role: 'member',
+    });
+    team.listMembers.mockResolvedValueOnce([{ ...member, role: 'leader' }]);
+    team.listMemberEvents.mockResolvedValueOnce([memberEvent]);
+
+    await store.getState().refresh();
+
+    expect(store.getState().session.role).toBe('leader');
+    expect(store.getState().memberEvents).toEqual([memberEvent]);
+  });
+
+  it('clears member events when a leader is demoted', async () => {
+    const store = createTeamStore();
+    await store.getState().bootstrap();
+    store.setState({ memberEvents: [memberEvent] });
+    team.listMembers.mockResolvedValueOnce([
+      { ...member, id: 'leader-1', email: 'leader@example.com', displayName: '领导', role: 'member' },
+    ]);
+    team.listMemberEvents.mockClear();
+
+    await store.getState().refresh();
+
+    expect(store.getState().session.role).toBe('member');
+    expect(store.getState().memberEvents).toEqual([]);
+    expect(team.listMemberEvents).not.toHaveBeenCalled();
+  });
+
+  it('normalizes leader-only filters after a demotion', async () => {
+    const store = createTeamStore();
+    await store.getState().bootstrap();
+    store.setState({ view: 'pending_review', memberFilter: 'member-1' });
+    team.listMembers.mockResolvedValueOnce([
+      { ...member, id: 'leader-1', email: 'leader@example.com', displayName: '领导', role: 'member' },
+    ]);
+    team.listTasks.mockResolvedValueOnce([]);
+
+    await store.getState().refresh();
+
+    expect(team.listTasks).toHaveBeenCalledWith({ view: 'all', memberId: undefined });
+    expect(store.getState().view).toBe('all');
+    expect(store.getState().memberFilter).toBeNull();
+  });
+
+  it('does not cancel a selection that was pending before a mutation started', async () => {
+    const store = createTeamStore();
+    await store.getState().bootstrap();
+    await store.getState().selectTask(task.id);
+    const pendingMutation = deferred<void>();
+    const pendingSelection = deferred<TeamTask | null>();
+    team.submitAssignee.mockReturnValueOnce(pendingMutation.promise);
+    team.listTasks.mockResolvedValueOnce([task, otherTask]);
+    team.getTask.mockImplementation((id: string) =>
+      id === task.id ? Promise.resolve(task) : pendingSelection.promise,
+    );
+
+    const selecting = store.getState().selectTask(otherTask.id);
+    const mutation = store.getState().submitAssignee(task.id, '提交说明', 1);
+    pendingMutation.resolve();
+    await mutation;
+
+    pendingSelection.resolve(otherTask);
+    await selecting;
+
+    expect(store.getState().activeTask?.id).toBe(otherTask.id);
+  });
+
+  it('clears the team workspace when the user is removed from the team', async () => {
+    const store = createTeamStore();
+    await store.getState().bootstrap();
+    await store.getState().selectTask(task.id);
+    team.refreshSession.mockResolvedValueOnce({
+      ...bootstrap.session,
+      teamId: null,
+      role: null,
+    });
+
+    await store.getState().refresh();
+
+    expect(store.getState()).toMatchObject({
+      team: null,
+      members: [],
+      tasks: [],
+      activeTask: null,
+      notes: [],
+      events: [],
+      notifications: [],
+      memberEvents: [],
+    });
+  });
+
+  it('clears the team workspace when the session expires', async () => {
+    const store = createTeamStore();
+    await store.getState().bootstrap();
+    team.refreshSession.mockResolvedValueOnce({
+      signedIn: false,
+      userId: null,
+      email: null,
+      displayName: null,
+      teamId: null,
+      role: null,
+    });
+
+    await store.getState().refresh();
+
+    expect(store.getState()).toMatchObject({
+      session: { signedIn: false },
+      team: null,
+      members: [],
+      tasks: [],
+      activeTask: null,
+      notes: [],
+      events: [],
+      notifications: [],
+      memberEvents: [],
+    });
+  });
+
+  it('does not let an expired reload reset a newer signed-in workspace', async () => {
+    const store = createTeamStore();
+    await store.getState().bootstrap();
+    const pendingSession = deferred<TeamSessionInfo>();
+    team.refreshSession.mockReturnValueOnce(pendingSession.promise);
+
+    const staleReload = store.getState().refresh();
+    team.signIn.mockResolvedValueOnce(otherBootstrap);
+    await store.getState().signIn({ email: 'leader2@example.com', password: 'secret' });
+    pendingSession.resolve({
+      signedIn: false,
+      userId: null,
+      email: null,
+      displayName: null,
+      teamId: null,
+      role: null,
+    });
+    await staleReload;
+
+    expect(store.getState().session.teamId).toBe(otherTask.teamId);
+    expect(store.getState().team?.id).toBe(otherTask.teamId);
+    expect(store.getState().tasks).toEqual([otherTask]);
+  });
+
+  it('clears leader state when a demotion is confirmed before member sync fails', async () => {
+    const store = createTeamStore();
+    await store.getState().bootstrap();
+    store.setState({ memberEvents: [memberEvent], view: 'pending_review', memberFilter: 'member-1' });
+    team.refreshSession.mockResolvedValueOnce({ ...bootstrap.session, role: 'member' });
+    team.listMembers.mockRejectedValueOnce(new Error('同步失败'));
+
+    await expect(store.getState().refresh()).rejects.toMatchObject({ message: '同步失败' });
+
+    expect(store.getState().session.role).toBe('member');
+    expect(store.getState().memberEvents).toEqual([]);
+    expect(store.getState().members).toEqual([]);
+    expect(store.getState().tasks).toEqual([]);
+    expect(store.getState().activeTask).toBeNull();
+    expect(store.getState().notes).toEqual([]);
+    expect(store.getState().events).toEqual([]);
+    expect(store.getState().view).toBe('all');
+    expect(store.getState().memberFilter).toBeNull();
+  });
+
+  it('normalizes leader-only state when bootstrap reports a demotion', async () => {
+    const store = createTeamStore();
+    await store.getState().bootstrap();
+    store.setState({ view: 'pending_review', memberFilter: 'member-1' });
+    team.bootstrap.mockResolvedValueOnce({
+      ...bootstrap,
+      session: { ...bootstrap.session, role: 'member' },
+      members: [{ ...member, id: 'leader-1', email: 'leader@example.com', displayName: '领导', role: 'member' }],
+      tasks: [],
+    });
+
+    await store.getState().setMemberRole({ userId: 'leader-1', role: 'member' });
+
+    expect(store.getState().view).toBe('all');
+    expect(store.getState().memberFilter).toBeNull();
+  });
+
+  it('does not cancel a pending task selection when an old mutation finishes', async () => {
+    const store = createTeamStore();
+    await store.getState().bootstrap();
+    await store.getState().selectTask(task.id);
+    const pendingMutation = deferred<void>();
+    const pendingSelection = deferred<TeamTask | null>();
+    team.submitAssignee.mockReturnValueOnce(pendingMutation.promise);
+    team.listTasks.mockResolvedValueOnce([task, otherTask]);
+    team.getTask.mockImplementation((id: string) =>
+      id === task.id ? Promise.resolve(task) : pendingSelection.promise,
+    );
+
+    const mutation = store.getState().submitAssignee(task.id, '提交说明', 1);
+    const selecting = store.getState().selectTask(otherTask.id);
+    pendingMutation.resolve();
+    await mutation;
+
+    pendingSelection.resolve(otherTask);
+    await selecting;
 
     expect(store.getState().activeTask?.id).toBe(otherTask.id);
   });

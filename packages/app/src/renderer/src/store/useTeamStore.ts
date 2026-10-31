@@ -95,10 +95,12 @@ export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
     let unsubscribeSync: (() => void) | null = null;
     let reloadRequestId = 0;
     let selectTaskRequestId = 0;
+    let completedSelectTaskRequestId = 0;
 
     const invalidateTaskRequests = () => {
       reloadRequestId += 1;
       selectTaskRequestId += 1;
+      completedSelectTaskRequestId = selectTaskRequestId;
     };
 
     const apply = (value: TeamBootstrap) => {
@@ -110,6 +112,12 @@ export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
         state.session.role !== value.session.role ||
         state.team?.id !== value.team?.id;
       if (identityChanged) invalidateTaskRequests();
+      const view = identityChanged || value.session.role !== 'leader'
+        ? state.view === 'pending_review' ? 'all' : state.view
+        : state.view;
+      const memberFilter = identityChanged || value.session.role !== 'leader'
+        ? null
+        : state.memberFilter;
       set({
         session: value.session,
         team: value.team,
@@ -121,6 +129,8 @@ export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
         syncState: value.sync,
         loading: false,
         error: null,
+        view,
+        memberFilter,
         ...(identityChanged ? { activeTask: null, notes: [], events: [] } : {}),
       });
     };
@@ -151,31 +161,99 @@ export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
       const outboxFailures = await window.memex.team.listOutboxFailures();
       set({ outboxFailures });
     };
+    const resetTeamWorkspace = (nextSession: TeamSessionInfo) => {
+      invalidateTaskRequests();
+      set({
+        session: nextSession,
+        team: null,
+        members: [],
+        tasks: [],
+        activeTask: null,
+        notes: [],
+        events: [],
+        notifications: [],
+        memberEvents: [],
+        outboxFailures: [],
+        syncState: idleSync,
+        loading: false,
+        error: null,
+        view: 'all',
+        memberFilter: null,
+      });
+    };
     const reload = async () => {
       const requestId = ++reloadRequestId;
       const isCurrent = () => requestId === reloadRequestId;
       const state = get();
       try {
         await run(async () => {
-          const [tasks, notifications] = await Promise.all([
-            window.memex.team.listTasks({ view: state.view, memberId: state.memberFilter ?? undefined }),
-            window.memex.team.listNotifications(),
-          ]);
+          const sessionSnapshot = await window.memex.team.refreshSession();
           if (!isCurrent()) return;
-          const currentActiveTaskId = get().activeTask?.id ?? null;
-          const activeTask = currentActiveTaskId
-            ? tasks.find((task) => task.id === currentActiveTaskId) ?? null
-            : null;
-          set({
-            tasks,
-            notifications,
-            activeTask,
-            ...(activeTask ? {} : { notes: [], events: [] }),
-          });
+          if (!sessionSnapshot.signedIn || !sessionSnapshot.userId || !sessionSnapshot.teamId || !sessionSnapshot.role) {
+            resetTeamWorkspace(sessionSnapshot);
+            return;
+          }
+          try {
+            const members = await window.memex.team.listMembers();
+            if (!isCurrent()) return;
+            const currentMember = members.find((member) => member.id === sessionSnapshot.userId);
+            if (!currentMember) throw new Error('无法确认当前成员角色，请刷新重试');
+            const role = currentMember.role;
+            const view = role === 'leader' || state.view !== 'pending_review' ? state.view : 'all';
+            const memberFilter = role === 'leader' ? state.memberFilter : null;
+            const [tasks, notifications, memberEvents] = await Promise.all([
+              window.memex.team.listTasks({ view, memberId: memberFilter ?? undefined }),
+              window.memex.team.listNotifications(),
+              role === 'leader'
+                ? window.memex.team.listMemberEvents()
+                : Promise.resolve(null),
+            ]);
+            if (!isCurrent()) return;
+            const currentActiveTaskId = get().activeTask?.id ?? null;
+            const activeTask = currentActiveTaskId
+              ? tasks.find((task) => task.id === currentActiveTaskId) ?? null
+              : null;
+            set({
+              session: { ...sessionSnapshot, role },
+              view,
+              memberFilter,
+              tasks,
+              notifications,
+              members,
+              memberEvents: role === 'leader' ? memberEvents ?? [] : [],
+              activeTask,
+              ...(activeTask ? {} : { notes: [], events: [] }),
+            });
+          } catch (error) {
+            if (!isCurrent()) throw error;
+            const role = sessionSnapshot.role;
+            const view = role === 'leader' || get().view !== 'pending_review' ? get().view : 'all';
+            set({
+              session: sessionSnapshot,
+              view,
+              memberFilter: role === 'leader' ? get().memberFilter : null,
+              memberEvents: role === 'leader' ? get().memberEvents : [],
+              ...(role === 'leader'
+                ? {}
+                : {
+                    members: [],
+                    tasks: [],
+                    activeTask: null,
+                    notes: [],
+                    events: [],
+                    notifications: [],
+                  }),
+            });
+            throw error;
+          }
         }, isCurrent);
       } catch (error) {
         if (isCurrent()) throw error;
       }
+    };
+    const reselectTaskIfActive = async (taskId: string, selectionRequestId: number) => {
+      if (selectTaskRequestId !== selectionRequestId || completedSelectTaskRequestId !== selectionRequestId) return;
+      if (get().activeTask?.id === taskId) await get().selectTask(taskId);
     };
 
     return {
@@ -270,11 +348,11 @@ export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
       async selectTask(id) {
         const requestId = ++selectTaskRequestId;
         const isCurrent = () => requestId === selectTaskRequestId;
-        if (!id) {
-          set({ activeTask: null, notes: [], events: [] });
-          return;
-        }
         try {
+          if (!id) {
+            set({ activeTask: null, notes: [], events: [] });
+            return;
+          }
           const [task, notes, events] = await run(
             () =>
               Promise.all([
@@ -292,6 +370,8 @@ export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
           set({ activeTask: task, notes, events });
         } catch (error) {
           if (isCurrent()) throw error;
+        } finally {
+          if (isCurrent()) completedSelectTaskRequestId = requestId;
         }
       },
 
@@ -305,38 +385,44 @@ export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
       },
 
       async updateTask(id, patch) {
+        const selectionRequestId = selectTaskRequestId;
         await run(() => window.memex.team.updateTask(id, patch));
         await reload();
-        await get().selectTask(id);
+        await reselectTaskIfActive(id, selectionRequestId);
       },
 
       async startAssignee(taskId, version) {
+        const selectionRequestId = selectTaskRequestId;
         await run(() => window.memex.team.startAssignee(taskId, version));
         await reload();
-        await get().selectTask(taskId);
+        await reselectTaskIfActive(taskId, selectionRequestId);
       },
 
       async addProgressNote(taskId, body) {
+        const selectionRequestId = selectTaskRequestId;
         await run(() => window.memex.team.addProgressNote(taskId, body));
-        await get().selectTask(taskId);
+        await reselectTaskIfActive(taskId, selectionRequestId);
       },
 
       async submitAssignee(taskId, body, version) {
+        const selectionRequestId = selectTaskRequestId;
         await run(() => window.memex.team.submitAssignee(taskId, body, version));
         await reload();
-        await get().selectTask(taskId);
+        await reselectTaskIfActive(taskId, selectionRequestId);
       },
 
       async reviewAssignee(taskId, assigneeId, decision, note, version) {
+        const selectionRequestId = selectTaskRequestId;
         await run(() => window.memex.team.reviewAssignee(taskId, assigneeId, decision, note, version));
         await reload();
-        await get().selectTask(taskId);
+        await reselectTaskIfActive(taskId, selectionRequestId);
       },
 
       async reopenTask(taskId, version) {
+        const selectionRequestId = selectTaskRequestId;
         await run(() => window.memex.team.reopenTask(taskId, version));
         await reload();
-        await get().selectTask(taskId);
+        await reselectTaskIfActive(taskId, selectionRequestId);
       },
 
       async archiveTask(taskId, version) {
@@ -347,9 +433,10 @@ export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
       },
 
       async closeAssignee(taskId, assigneeId, reason, version) {
+        const selectionRequestId = selectTaskRequestId;
         await run(() => window.memex.team.closeAssignee(taskId, assigneeId, reason, version));
         await reload();
-        await get().selectTask(taskId);
+        await reselectTaskIfActive(taskId, selectionRequestId);
       },
 
       createInvite(input) {

@@ -35,6 +35,7 @@ function text(value: unknown): string {
 
 export function registerTeamIpc(service: TeamService, onSyncState: (state: TeamSyncState) => void): void {
   ipcMain.handle(IPC.teamBootstrap, () => service.bootstrap());
+  ipcMain.handle(IPC.teamRefreshSession, () => service.refreshSession());
   ipcMain.handle(IPC.teamSignIn, (_event, input) => service.signIn(teamSignInSchema.parse(input)));
   ipcMain.handle(IPC.teamSignUp, (_event, input) => service.signUp(teamSignUpSchema.parse(input)));
   ipcMain.handle(IPC.teamSignOut, () => service.signOut());
@@ -43,6 +44,7 @@ export function registerTeamIpc(service: TeamService, onSyncState: (state: TeamS
   ipcMain.handle(IPC.teamTasksList, (_event, filter) => service.listTasks(teamTaskFilterSchema.parse(filter)));
   ipcMain.handle(IPC.teamTasksGet, (_event, taskId) => service.getTask(id(taskId)));
   ipcMain.handle(IPC.teamNotificationsList, () => service.listNotifications());
+  ipcMain.handle(IPC.teamMembers, () => service.listMembers());
   ipcMain.handle(IPC.teamMemberEvents, () => service.listMemberEvents());
   ipcMain.handle(IPC.teamTasksCreate, (_event, input) => service.createTask(teamTaskCreateSchema.parse(input)));
   ipcMain.handle(IPC.teamTasksUpdate, (_event, taskId, patch) =>

@@ -598,4 +598,224 @@ describe('TeamTaskDetail', () => {
     expect(within(audit).getByText(/领导 通过了分项（成员）/)).toBeVisible();
     expect(within(audit).getByText(/领导 创建了任务/)).toBeVisible();
   });
+
+  it('clears task-scoped draft state when switching tasks', async () => {
+    const doingTask: TeamTask = {
+      ...task,
+      assignees: task.assignees.map((item) =>
+        item.id === leader.id ? { ...item, status: 'doing', version: 3 } : item,
+      ),
+    };
+    const switchedTask: TeamTask = {
+      ...task2,
+      assignees: task2.assignees.map((item) =>
+        item.id === leader.id ? { ...item, status: 'doing', version: 3 } : item,
+      ),
+    };
+    resetStore({ tasks: [doingTask], activeTask: doingTask });
+    render(<TeamTaskDetail />);
+
+    await userEvent.type(screen.getByLabelText('补充进展备注'), '任务一补充');
+    await userEvent.type(screen.getByLabelText('本次进度备注'), '任务一提交');
+    await userEvent.click(screen.getByRole('button', { name: '关闭分项-成员' }));
+    await userEvent.type(screen.getByLabelText('关闭原因-成员'), '任务一关闭原因');
+
+    act(() => {
+      useTeamStore.setState({ tasks: [switchedTask], activeTask: switchedTask });
+    });
+
+    expect(screen.getByLabelText('补充进展备注')).toHaveValue('');
+    expect(screen.getByLabelText('本次进度备注')).toHaveValue('');
+    expect(screen.queryByLabelText('关闭原因-成员')).not.toBeInTheDocument();
+  });
+
+  it('keeps drafts when the same task refreshes', async () => {
+    const doingTask: TeamTask = {
+      ...task,
+      assignees: task.assignees.map((item) =>
+        item.id === leader.id ? { ...item, status: 'doing', version: 3 } : item,
+      ),
+    };
+    resetStore({ tasks: [doingTask], activeTask: doingTask });
+    render(<TeamTaskDetail />);
+
+    await userEvent.type(screen.getByLabelText('补充进展备注'), '保留中的补充');
+    await userEvent.type(screen.getByLabelText('本次进度备注'), '保留中的提交');
+
+    act(() => {
+      useTeamStore.setState({
+        tasks: [{ ...doingTask, title: '刷新后的标题' }],
+        activeTask: { ...doingTask, title: '刷新后的标题' },
+      });
+    });
+
+    expect(screen.getByLabelText('补充进展备注')).toHaveValue('保留中的补充');
+    expect(screen.getByLabelText('本次进度备注')).toHaveValue('保留中的提交');
+  });
+
+  it('does not clear a new task draft when an old task action finishes', async () => {
+    const pending = deferred<void>();
+    const doingTask: TeamTask = {
+      ...task,
+      assignees: task.assignees.map((item) =>
+        item.id === leader.id ? { ...item, status: 'doing', version: 3 } : item,
+      ),
+    };
+    const switchedTask: TeamTask = {
+      ...task2,
+      assignees: task2.assignees.map((item) =>
+        item.id === leader.id ? { ...item, status: 'doing', version: 3 } : item,
+      ),
+    };
+    const submitAssignee = vi.fn().mockReturnValue(pending.promise);
+    resetStore({ tasks: [doingTask], activeTask: doingTask, submitAssignee });
+    render(<TeamTaskDetail />);
+
+    await userEvent.type(screen.getByLabelText('本次进度备注'), '任务一提交');
+    await userEvent.click(screen.getByRole('button', { name: '提交团队验收' }));
+
+    act(() => {
+      useTeamStore.setState({ tasks: [switchedTask], activeTask: switchedTask });
+    });
+    await userEvent.type(screen.getByLabelText('本次进度备注'), '任务二提交');
+
+    await act(async () => {
+      pending.resolve();
+      await pending.promise;
+    });
+
+    expect(screen.getByLabelText('本次进度备注')).toHaveValue('任务二提交');
+  });
+
+  it('does not clear a revisited task draft when an old action finishes', async () => {
+    const pending = deferred<void>();
+    const doingTask: TeamTask = {
+      ...task,
+      assignees: task.assignees.map((item) =>
+        item.id === leader.id ? { ...item, status: 'doing', version: 3 } : item,
+      ),
+    };
+    const switchedTask: TeamTask = {
+      ...task2,
+      assignees: task2.assignees.map((item) =>
+        item.id === leader.id ? { ...item, status: 'doing', version: 3 } : item,
+      ),
+    };
+    resetStore({
+      tasks: [doingTask],
+      activeTask: doingTask,
+      submitAssignee: vi.fn().mockReturnValue(pending.promise),
+    });
+    render(<TeamTaskDetail />);
+
+    await userEvent.type(screen.getByLabelText('本次进度备注'), '第一次提交');
+    await userEvent.click(screen.getByRole('button', { name: '提交团队验收' }));
+
+    act(() => {
+      useTeamStore.setState({ tasks: [switchedTask], activeTask: switchedTask });
+    });
+    act(() => {
+      useTeamStore.setState({ tasks: [doingTask], activeTask: doingTask });
+    });
+    await userEvent.type(screen.getByLabelText('本次进度备注'), '重新编辑后的草稿');
+
+    await act(async () => {
+      pending.resolve();
+      await pending.promise;
+    });
+
+    expect(screen.getByLabelText('本次进度备注')).toHaveValue('重新编辑后的草稿');
+  });
+
+  it('keeps text typed while the same task submission is pending', async () => {
+    const pending = deferred<void>();
+    const doingTask: TeamTask = {
+      ...task,
+      assignees: task.assignees.map((item) =>
+        item.id === leader.id ? { ...item, status: 'doing', version: 3 } : item,
+      ),
+    };
+    resetStore({
+      tasks: [doingTask],
+      activeTask: doingTask,
+      submitAssignee: vi.fn().mockReturnValue(pending.promise),
+    });
+    render(<TeamTaskDetail />);
+
+    await userEvent.type(screen.getByLabelText('本次进度备注'), '第一次提交');
+    await userEvent.click(screen.getByRole('button', { name: '提交团队验收' }));
+    await userEvent.type(screen.getByLabelText('本次进度备注'), '补充内容');
+
+    await act(async () => {
+      pending.resolve();
+      await pending.promise;
+    });
+
+    expect(screen.getByLabelText('本次进度备注')).toHaveValue('第一次提交补充内容');
+  });
+
+  it('keeps a close reason edited while the same close request is pending', async () => {
+    const pending = deferred<void>();
+    const doingTask: TeamTask = {
+      ...task,
+      assignees: task.assignees.map((item) =>
+        item.id === leader.id ? { ...item, status: 'doing', version: 3 } : item,
+      ),
+    };
+    resetStore({
+      tasks: [doingTask],
+      activeTask: doingTask,
+      closeAssignee: vi.fn().mockReturnValue(pending.promise),
+    });
+    render(<TeamTaskDetail />);
+
+    await userEvent.click(screen.getByRole('button', { name: '关闭分项-成员' }));
+    await userEvent.type(screen.getByLabelText('关闭原因-成员'), '第一次原因');
+    await userEvent.click(screen.getByRole('button', { name: '确认关闭分项-成员' }));
+    await userEvent.clear(screen.getByLabelText('关闭原因-成员'));
+    await userEvent.type(screen.getByLabelText('关闭原因-成员'), '第二次原因');
+
+    await act(async () => {
+      pending.resolve();
+      await pending.promise;
+    });
+
+    expect(screen.getByLabelText('关闭原因-成员')).toHaveValue('第二次原因');
+  });
+
+  it('does not show an old task action error on the new task', async () => {
+    const pending = deferred<void>();
+    const doingTask: TeamTask = {
+      ...task,
+      assignees: task.assignees.map((item) =>
+        item.id === leader.id ? { ...item, status: 'doing', version: 3 } : item,
+      ),
+    };
+    const switchedTask: TeamTask = {
+      ...task2,
+      assignees: task2.assignees.map((item) =>
+        item.id === leader.id ? { ...item, status: 'doing', version: 3 } : item,
+      ),
+    };
+    resetStore({
+      tasks: [doingTask],
+      activeTask: doingTask,
+      submitAssignee: vi.fn().mockReturnValue(pending.promise),
+    });
+    render(<TeamTaskDetail />);
+
+    await userEvent.type(screen.getByLabelText('本次进度备注'), '任务一提交');
+    await userEvent.click(screen.getByRole('button', { name: '提交团队验收' }));
+
+    act(() => {
+      useTeamStore.setState({ tasks: [switchedTask], activeTask: switchedTask });
+    });
+
+    await act(async () => {
+      pending.reject(new Error('任务一失败'));
+      await pending.promise.catch(() => undefined);
+    });
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
 });

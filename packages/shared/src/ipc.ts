@@ -32,14 +32,15 @@ import type {
 } from './reports/types.js';
 
 import type {
-  TeamBootstrap, TeamCreateInput, TeamInvite, TeamInviteCreateInput, TeamJoinInput, TeamMemberEvent,
-  TeamNotification, TeamOutboxFailure, TeamProgressNote, TeamRolePatch, TeamSignInInput,
+  TeamBootstrap, TeamCreateInput, TeamInvite, TeamInviteCreateInput, TeamJoinInput, TeamMember, TeamMemberEvent,
+  TeamNotification, TeamOutboxFailure, TeamProgressNote, TeamRolePatch, TeamSessionInfo, TeamSignInInput,
   TeamSignUpInput, TeamSyncState, TeamTask, TeamTaskEvent, TeamTaskFilter, TeamTaskInput, TeamTaskPatch,
 } from './team/types.js';
 
 export interface MemexApi {
   team: {
     bootstrap(): Promise<TeamBootstrap>;
+    refreshSession(): Promise<TeamSessionInfo>;
     signIn(input: TeamSignInInput): Promise<TeamBootstrap>;
     signUp(input: TeamSignUpInput): Promise<{ needsEmailConfirmation: boolean }>;
     signOut(): Promise<void>;
@@ -47,6 +48,7 @@ export interface MemexApi {
     joinTeam(input: TeamJoinInput): Promise<TeamBootstrap>;
     listTasks(filter?: TeamTaskFilter): Promise<TeamTask[]>;
     listNotifications(): Promise<TeamNotification[]>;
+    listMembers(): Promise<TeamMember[]>;
     listMemberEvents(): Promise<TeamMemberEvent[]>;
     getTask(id: string): Promise<TeamTask | null>;
     getTaskNotes(taskId: string): Promise<TeamProgressNote[]>;
@@ -155,6 +157,7 @@ export interface MemexApi {
 
 export const IPC = {
   teamBootstrap: 'team:bootstrap',
+  teamRefreshSession: 'team:refresh-session',
   teamSignIn: 'team:sign-in',
   teamSignUp: 'team:sign-up',
   teamSignOut: 'team:sign-out',
@@ -163,6 +166,7 @@ export const IPC = {
   teamTasksList: 'team:tasks-list',
   teamTasksGet: 'team:tasks-get',
   teamNotificationsList: 'team:notifications-list',
+  teamMembers: 'team:members',
   teamTaskNotes: 'team:task-notes',
   teamTaskEvents: 'team:task-events',
   teamTasksCreate: 'team:tasks-create',

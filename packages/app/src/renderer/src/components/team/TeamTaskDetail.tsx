@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { TeamTaskEvent } from '@memex/shared';
 import { Archive, Check, RotateCcw, X } from 'lucide-react';
 import { canApproveAssignee, deriveTeamTaskState } from '@memex/shared/team';
@@ -55,13 +55,37 @@ export function TeamTaskDetail() {
   const [actionError, setActionError] = useState('');
   const [closingAssigneeId, setClosingAssigneeId] = useState<string | null>(null);
   const [closeReason, setCloseReason] = useState('');
+  const taskVisitRef = useRef(0);
+  const closingAssigneeIdRef = useRef<string | null>(null);
+  const closeReasonRef = useRef('');
 
-  const runAction = async (action: () => Promise<void>) => {
+  useLayoutEffect(() => {
+    taskVisitRef.current += 1;
+    setDescriptionOpen(false);
+    setNote('');
+    setProgressNote('');
+    setActionError('');
+    setClosingAssigneeId(null);
+    setCloseReason('');
+  }, [activeTask?.id]);
+
+  useLayoutEffect(() => {
+    closingAssigneeIdRef.current = closingAssigneeId;
+    closeReasonRef.current = closeReason;
+  }, [closingAssigneeId, closeReason]);
+
+  const runAction = async (action: () => Promise<void>): Promise<boolean> => {
+    if (!activeTask) return false;
+    const visit = taskVisitRef.current;
     setActionError('');
     try {
       await action();
+      return taskVisitRef.current === visit;
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : String(error));
+      if (taskVisitRef.current === visit) {
+        setActionError(error instanceof Error ? error.message : String(error));
+      }
+      return false;
     }
   };
 
@@ -89,19 +113,25 @@ export function TeamTaskDetail() {
   };
 
   const submit = async () => {
-    if (!mine || !note.trim() || archived) return;
-    await runAction(async () => {
-      await submitAssignee(activeTask.id, note.trim(), mine.version);
-      setNote('');
+    const submittedNote = note.trim();
+    if (!mine || !submittedNote || archived) return;
+    const succeeded = await runAction(async () => {
+      await submitAssignee(activeTask.id, submittedNote, mine.version);
     });
+    if (succeeded) {
+      setNote((current) => current.trim() === submittedNote ? '' : current);
+    }
   };
 
   const addNote = async () => {
-    if (!progressNote.trim() || archived) return;
-    await runAction(async () => {
-      await addProgressNote(activeTask.id, progressNote.trim());
-      setProgressNote('');
+    const submittedNote = progressNote.trim();
+    if (!submittedNote || archived) return;
+    const succeeded = await runAction(async () => {
+      await addProgressNote(activeTask.id, submittedNote);
     });
+    if (succeeded) {
+      setProgressNote((current) => current.trim() === submittedNote ? '' : current);
+    }
   };
 
   return (
@@ -221,16 +251,23 @@ export function TeamTaskDetail() {
                         size="sm"
                         aria-label={`确认关闭分项-${assignee.displayName}`}
                         disabled={!closeReason.trim()}
-                        onClick={() => void runAction(async () => {
-                          await closeAssignee(
-                            activeTask.id,
-                            assignee.id,
-                            closeReason.trim(),
-                            assignee.version,
-                          );
-                          setClosingAssigneeId(null);
-                          setCloseReason('');
-                        })}
+                        onClick={() => {
+                          const reason = closeReason.trim();
+                          void runAction(async () => {
+                            await closeAssignee(
+                              activeTask.id,
+                              assignee.id,
+                              reason,
+                              assignee.version,
+                            );
+                          }).then((succeeded) => {
+                            if (!succeeded) return;
+                            if (closingAssigneeIdRef.current !== assignee.id) return;
+                            if (closeReasonRef.current.trim() !== reason) return;
+                            setClosingAssigneeId(null);
+                            setCloseReason('');
+                          });
+                        }}
                       >
                         确认关闭
                       </Button>
