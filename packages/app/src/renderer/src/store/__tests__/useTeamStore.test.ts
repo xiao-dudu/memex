@@ -91,6 +91,8 @@ const bootstrap: TeamBootstrap = {
   members: [],
   tasks: [task],
   notifications: [],
+  memberEvents: [],
+  outboxFailures: [],
   sync: idleSync,
 };
 
@@ -107,6 +109,8 @@ const otherBootstrap: TeamBootstrap = {
   members: [],
   tasks: [otherTask],
   notifications: [],
+  memberEvents: [],
+  outboxFailures: [],
   sync: idleSync,
 };
 
@@ -134,6 +138,11 @@ const createTeamApi = () => ({
   markNotificationRead: vi.fn().mockResolvedValue(undefined),
   setMemberRole: vi.fn().mockResolvedValue(undefined),
   removeMember: vi.fn().mockResolvedValue(undefined),
+  listInvites: vi.fn().mockResolvedValue([]),
+  leaveTeam: vi.fn().mockResolvedValue(undefined),
+  listOutboxFailures: vi.fn().mockResolvedValue([]),
+  retryOutbox: vi.fn().mockResolvedValue(undefined),
+  discardOutbox: vi.fn().mockResolvedValue(undefined),
   sync: vi.fn().mockResolvedValue(idleSync),
   onSyncState: vi.fn((_callback: (state: TeamSyncState) => void) => vi.fn()),
 });
@@ -356,6 +365,25 @@ describe('team store', () => {
 
     expect(store.getState().notifications[0]?.readAt).toBe(1_000);
     expect(team.listTasks).not.toHaveBeenCalled();
+  });
+
+  it('reloads tasks and notifications when a realtime sync reports new data', async () => {
+    let listener: ((state: TeamSyncState) => void) | undefined;
+    team.onSyncState.mockImplementation((callback: (state: TeamSyncState) => void) => {
+      listener = callback;
+      return vi.fn();
+    });
+    const store = createTeamStore();
+    await store.getState().bootstrap();
+    team.listTasks.mockClear();
+    team.listNotifications.mockClear();
+
+    listener?.({ phase: 'idle', pendingCount: 0, lastSyncedAt: 2, message: null });
+
+    await vi.waitFor(() => {
+      expect(team.listTasks).toHaveBeenCalledOnce();
+      expect(team.listNotifications).toHaveBeenCalledOnce();
+    });
   });
 
   it('discards a stale reload result', async () => {

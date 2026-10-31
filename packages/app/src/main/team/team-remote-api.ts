@@ -1,11 +1,54 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { TeamMember, TeamNotification, TeamProgressNote, TeamTask, TeamTaskEvent } from '@memex/shared';
+import type {
+  TeamInvite,
+  TeamMember,
+  TeamMemberEvent,
+  TeamNotification,
+  TeamProgressNote,
+  TeamTask,
+  TeamTaskEvent,
+} from '@memex/shared';
 import type { TeamChangeSet, TeamRemoteApi } from './team-sync.js';
 
-export function createTeamRemoteApi(supabase: SupabaseClient): TeamRemoteApi {
+type Row = Record<string, any>;
+
+const SNAPSHOT_TABLES = {
+  members: { table: 'team_members', order: ['user_id'] },
+  tasks: { table: 'team_tasks', order: ['id'] },
+  leaders: { table: 'team_task_leaders', order: ['task_id', 'user_id'] },
+  assignees: { table: 'team_task_assignees', order: ['task_id', 'user_id'] },
+  notes: { table: 'team_task_progress_notes', order: ['id'] },
+  events: { table: 'team_task_events', order: ['id'] },
+  memberEvents: { table: 'team_member_events', order: ['id'] },
+  notifications: { table: 'team_notifications', order: ['id'] },
+} as const;
+
+export function createTeamRemoteApi(supabase: SupabaseClient, pageSize = 1_000): TeamRemoteApi {
+  if (!Number.isInteger(pageSize) || pageSize <= 0) throw new Error('INVALID_PAGE_SIZE');
+
   const rpc = async (name: string, args: Record<string, unknown>) => {
     const { error } = await supabase.rpc(name, args);
     if (error) throw new Error(error.message);
+  };
+
+  const fetchAll = async (
+    table: string,
+    order: readonly string[],
+    teamId: string,
+  ): Promise<Row[]> => {
+    const rows: Row[] = [];
+    let from = 0;
+    while (true) {
+      let query = supabase.from(table).select('*').eq('team_id', teamId);
+      for (const column of order) query = query.order(column, { ascending: true });
+      const { data, error } = await query.range(from, from + pageSize - 1);
+      if (error) throw new Error(error.message);
+      const page = (data ?? []) as Row[];
+      rows.push(...page);
+      if (page.length < pageSize) break;
+      from += pageSize;
+    }
+    return rows;
   };
 
   return {
@@ -122,40 +165,54 @@ export function createTeamRemoteApi(supabase: SupabaseClient): TeamRemoteApi {
       p_team_id: teamId,
       p_user_id: userId,
     }),
+    leaveTeam: (operationId, teamId) => rpc('team_leave_team', {
+      p_operation_id: operationId,
+      p_team_id: teamId,
+    }),
+    async listInvites(teamId) {
+      const { data, error } = await supabase
+        .from('team_invites')
+        .select('*')
+        .eq('team_id', teamId)
+        .is('accepted_at', null)
+        .is('revoked_at', null)
+        .order('created_at', { ascending: false });
+      if (error) throw new Error(error.message);
+      return ((data ?? []) as Row[]).map((row): TeamInvite => ({
+        id: row.id,
+        teamId: row.team_id,
+        email: row.email,
+        expiresAt: Number(row.expires_at),
+        acceptedAt: row.accepted_at === null ? null : Number(row.accepted_at),
+        revokedAt: row.revoked_at === null ? null : Number(row.revoked_at),
+        createdAt: Number(row.created_at),
+      }));
+    },
     async pullChanges(teamId, cursor) {
       const [
         teamResult,
-        membersResult,
-        tasksResult,
-        leadersResult,
-        assigneesResult,
-        notesResult,
-        eventsResult,
-        notificationsResult,
+        membersRows,
+        tasksRows,
+        leadersRows,
+        assigneesRows,
+        notesRows,
+        eventsRows,
+        memberEventsRows,
+        notificationsRows,
       ] = await Promise.all([
         supabase.from('teams').select('id, name').eq('id', teamId).single(),
-        supabase.from('team_members').select('*').eq('team_id', teamId),
-        supabase.from('team_tasks').select('*').eq('team_id', teamId),
-        supabase.from('team_task_leaders').select('*').eq('team_id', teamId),
-        supabase.from('team_task_assignees').select('*').eq('team_id', teamId),
-        supabase.from('team_task_progress_notes').select('*').eq('team_id', teamId),
-        supabase.from('team_task_events').select('*').eq('team_id', teamId),
-        supabase.from('team_notifications').select('*').eq('team_id', teamId),
+        fetchAll(SNAPSHOT_TABLES.members.table, SNAPSHOT_TABLES.members.order, teamId),
+        fetchAll(SNAPSHOT_TABLES.tasks.table, SNAPSHOT_TABLES.tasks.order, teamId),
+        fetchAll(SNAPSHOT_TABLES.leaders.table, SNAPSHOT_TABLES.leaders.order, teamId),
+        fetchAll(SNAPSHOT_TABLES.assignees.table, SNAPSHOT_TABLES.assignees.order, teamId),
+        fetchAll(SNAPSHOT_TABLES.notes.table, SNAPSHOT_TABLES.notes.order, teamId),
+        fetchAll(SNAPSHOT_TABLES.events.table, SNAPSHOT_TABLES.events.order, teamId),
+        fetchAll(SNAPSHOT_TABLES.memberEvents.table, SNAPSHOT_TABLES.memberEvents.order, teamId),
+        fetchAll(SNAPSHOT_TABLES.notifications.table, SNAPSHOT_TABLES.notifications.order, teamId),
       ]);
-      for (const result of [
-        teamResult,
-        membersResult,
-        tasksResult,
-        leadersResult,
-        assigneesResult,
-        notesResult,
-        eventsResult,
-        notificationsResult,
-      ]) {
-        if (result.error) throw new Error(result.error.message);
-      }
+      if (teamResult.error) throw new Error(teamResult.error.message);
 
-      const members: TeamMember[] = (membersResult.data ?? []).map((row) => ({
+      const members: TeamMember[] = membersRows.map((row) => ({
         id: row.user_id,
         teamId: row.team_id,
         email: row.email,
@@ -165,7 +222,7 @@ export function createTeamRemoteApi(supabase: SupabaseClient): TeamRemoteApi {
         removedAt: row.removed_at === null ? null : Number(row.removed_at),
       }));
       const byId = new Map(members.map((member) => [member.id, member]));
-      const notes: TeamProgressNote[] = (notesResult.data ?? [])
+      const notes: TeamProgressNote[] = notesRows
         .map((row) => ({
           id: row.id,
           taskId: row.task_id,
@@ -174,7 +231,7 @@ export function createTeamRemoteApi(supabase: SupabaseClient): TeamRemoteApi {
           createdAt: Number(row.created_at),
         }))
         .sort((a, b) => a.createdAt - b.createdAt);
-      const events: TeamTaskEvent[] = (eventsResult.data ?? []).map((row) => ({
+      const events: TeamTaskEvent[] = eventsRows.map((row) => ({
         id: row.id,
         taskId: row.task_id,
         actorId: row.actor_id,
@@ -184,7 +241,15 @@ export function createTeamRemoteApi(supabase: SupabaseClient): TeamRemoteApi {
         toStatus: row.to_status,
         createdAt: Number(row.created_at),
       }));
-      const tasks: TeamTask[] = (tasksResult.data ?? []).map((row) => ({
+      const memberEvents: TeamMemberEvent[] = memberEventsRows.map((row) => ({
+        id: row.id,
+        teamId: row.team_id,
+        actorId: row.actor_id,
+        targetUserId: row.target_user_id,
+        type: row.event_type,
+        createdAt: Number(row.created_at),
+      }));
+      const tasks: TeamTask[] = tasksRows.map((row) => ({
         id: row.id,
         teamId: row.team_id,
         title: row.title,
@@ -198,11 +263,11 @@ export function createTeamRemoteApi(supabase: SupabaseClient): TeamRemoteApi {
         version: row.version,
         createdAt: Number(row.created_at),
         updatedAt: Number(row.updated_at),
-        leaders: (leadersResult.data ?? [])
+        leaders: leadersRows
           .filter((item) => item.task_id === row.id)
           .map((item) => byId.get(item.user_id))
           .filter(Boolean) as TeamTask['leaders'],
-        assignees: (assigneesResult.data ?? [])
+        assignees: assigneesRows
           .filter((item) => item.task_id === row.id)
           .map((item) => {
             const member = byId.get(item.user_id);
@@ -219,7 +284,7 @@ export function createTeamRemoteApi(supabase: SupabaseClient): TeamRemoteApi {
             };
           }),
       }));
-      const notifications: TeamNotification[] = (notificationsResult.data ?? []).map((row) => ({
+      const notifications: TeamNotification[] = notificationsRows.map((row) => ({
         id: row.id,
         teamId: row.team_id,
         userId: row.user_id,
@@ -231,15 +296,16 @@ export function createTeamRemoteApi(supabase: SupabaseClient): TeamRemoteApi {
         createdAt: Number(row.created_at),
       }));
       const versions = [
-        membersResult.data,
-        tasksResult.data,
-        leadersResult.data,
-        assigneesResult.data,
-        notesResult.data,
-        eventsResult.data,
-        notificationsResult.data,
+        membersRows,
+        tasksRows,
+        leadersRows,
+        assigneesRows,
+        notesRows,
+        eventsRows,
+        memberEventsRows,
+        notificationsRows,
       ]
-        .flatMap((rows) => rows ?? [])
+        .flat()
         .map((row) => Number(row.sync_version ?? 0));
       return {
         team: teamResult.data ? { id: teamResult.data.id, name: teamResult.data.name } : null,
@@ -247,8 +313,10 @@ export function createTeamRemoteApi(supabase: SupabaseClient): TeamRemoteApi {
         tasks,
         notes,
         events,
+        memberEvents,
         notifications,
         cursor: Math.max(cursor, ...versions),
+        complete: true,
       } satisfies TeamChangeSet;
     },
   };

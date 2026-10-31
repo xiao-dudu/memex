@@ -530,24 +530,20 @@ select is(
   'member',
   'leader becomes member'
 );
-select lives_ok(
+select throws_ok(
   $$select public.team_set_member_role('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '44444444-4444-4444-8444-444444444444', 'member', '44444444-4444-4444-8444-444444444449')$$,
-  'another leader can demote a leader'
+  'P0001',
+  'APPROVER_REQUIRED',
+  'leader demotion is blocked when it would remove the only non-assignee approver'
 );
 select is(
   (select role::text from public.team_members
    where team_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
      and user_id = '44444444-4444-4444-8444-444444444444'),
-  'member',
-  'second leader becomes member'
+  'leader',
+  'blocked demotion keeps the task approver as a leader'
 );
 select set_config('request.jwt.claims', '{"sub":"11111111-1111-4111-8111-111111111111","email":"leader@example.com"}', true);
-select throws_ok(
-  $$select public.team_reopen_task('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 1, 'a0000000-0000-4000-8000-000000000005')$$,
-  'P0001',
-  'NOT_AUTHORIZED',
-  'demoted task leader blocks reopen'
-);
 select is(
   length(set_config(
     'test.conflict_revoke_token',
@@ -782,6 +778,142 @@ select throws_ok(
   'P0001',
   'ALREADY_IN_TEAM',
   'user cannot create a second active team'
+);
+
+reset role;
+insert into public.team_tasks (id, team_id, title, created_by)
+values ('a1a1a1a1-a1a1-41a1-81a1-a1a1a1a1a1a1', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '归档不可重开', '11111111-1111-4111-8111-111111111111');
+insert into public.team_task_leaders (task_id, team_id, user_id)
+values ('a1a1a1a1-a1a1-41a1-81a1-a1a1a1a1a1a1', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111');
+insert into public.team_task_assignees (task_id, team_id, user_id, status)
+values ('a1a1a1a1-a1a1-41a1-81a1-a1a1a1a1a1a1', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '22222222-2222-4222-8222-222222222222', 'approved');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-4111-8111-111111111111","email":"leader@example.com"}', true);
+select lives_ok(
+  $$select public.team_archive_task('a1a1a1a1-a1a1-41a1-81a1-a1a1a1a1a1a1', 1, 'a1a1a1a1-a1a1-41a1-81a1-a1a1a1a1a1a2')$$,
+  'leader can archive a task for reopen coverage'
+);
+select throws_ok(
+  $$select public.team_reopen_task('a1a1a1a1-a1a1-41a1-81a1-a1a1a1a1a1a1', 2, 'a1a1a1a1-a1a1-41a1-81a1-a1a1a1a1a1a3')$$,
+  'P0001',
+  'TASK_ARCHIVED',
+  'archived tasks cannot be reopened'
+);
+
+reset role;
+insert into public.team_tasks (id, team_id, title, created_by)
+values ('a2a2a2a2-a2a2-42a2-82a2-a2a2a2a2a2a2', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '终态备注', '11111111-1111-4111-8111-111111111111');
+insert into public.team_task_leaders (task_id, team_id, user_id)
+values ('a2a2a2a2-a2a2-42a2-82a2-a2a2a2a2a2a2', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111');
+insert into public.team_task_assignees (task_id, team_id, user_id, status)
+values ('a2a2a2a2-a2a2-42a2-82a2-a2a2a2a2a2a2', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '22222222-2222-4222-8222-222222222222', 'approved');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"22222222-2222-4222-8222-222222222222","email":"member1@example.com"}', true);
+select throws_ok(
+  $$select public.team_add_progress_note('a2a2a2a2-a2a2-42a2-82a2-a2a2a2a2a2a2', 'a2a2a2a2-a2a2-42a2-82a2-a2a2a2a2a2a3', '终态后不应写入', 'a2a2a2a2-a2a2-42a2-82a2-a2a2a2a2a2a4')$$,
+  'P0001',
+  'INVALID_STATUS',
+  'approved assignments reject progress notes'
+);
+
+reset role;
+insert into public.team_notifications (id, team_id, user_id, type, title, body)
+values ('a3a3a3a3-a3a3-43a3-83a3-a3a3a3a3a3a3', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '66666666-6666-4666-8666-666666666666', 'assigned', '已移除成员通知', '不应可见');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"66666666-6666-4666-8666-666666666666","email":"invitee@example.com"}', true);
+select is(
+  (select count(*)::int from public.team_notifications where id = 'a3a3a3a3-a3a3-43a3-83a3-a3a3a3a3a3a3'),
+  0,
+  'removed members cannot read notifications'
+);
+select throws_ok(
+  $$select public.team_mark_notification_read('a3a3a3a3-a3a3-43a3-83a3-a3a3a3a3a3a3', 'a3a3a3a3-a3a3-43a3-83a3-a3a3a3a3a3a4')$$,
+  'P0001',
+  'NOT_AUTHORIZED',
+  'removed members cannot mark notifications read'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-4111-8111-111111111111","email":"leader@example.com"}', true);
+select is(
+  (select count(*)::int from public.team_member_events
+   where team_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+     and target_user_id = '66666666-6666-4666-8666-666666666666'
+     and event_type = 'removed'
+     and actor_id = '11111111-1111-4111-8111-111111111111'),
+  1,
+  'member removal writes an actor/target audit event'
+);
+
+reset role;
+insert into auth.users (id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at)
+values
+  ('88888888-8888-4888-8888-888888888888', 'authenticated', 'authenticated', 'leave@example.com', crypt('password', gen_salt('bf')), now(), now(), now()),
+  ('cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd', 'authenticated', 'authenticated', 'leave-leader@example.com', crypt('password', gen_salt('bf')), now(), now(), now());
+insert into public.teams (id, name, created_by)
+values ('f0f0f0f0-f0f0-40f0-80f0-f0f0f0f0f0f0', '自离团队', 'cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd');
+insert into public.team_members (team_id, user_id, role, email, display_name)
+values
+  ('f0f0f0f0-f0f0-40f0-80f0-f0f0f0f0f0f0', '88888888-8888-4888-8888-888888888888', 'member', 'leave@example.com', '自离成员'),
+  ('f0f0f0f0-f0f0-40f0-80f0-f0f0f0f0f0f0', 'cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd', 'leader', 'leave-leader@example.com', '自离团队领导');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"88888888-8888-4888-8888-888888888888","email":"leave@example.com"}', true);
+select lives_ok(
+  $$select public.team_leave_team('f0f0f0f0-f0f0-40f0-80f0-f0f0f0f0f0f0', '88888888-8888-4888-8888-888888888889')$$,
+  'member can leave a team'
+);
+reset role;
+select is(
+  (select status from public.team_members
+   where team_id = 'f0f0f0f0-f0f0-40f0-80f0-f0f0f0f0f0f0'
+     and user_id = '88888888-8888-4888-8888-888888888888'),
+  'removed',
+  'self-leave marks membership removed'
+);
+select is(
+  (select count(*)::int from public.team_member_events
+   where team_id = 'f0f0f0f0-f0f0-40f0-80f0-f0f0f0f0f0f0'
+     and actor_id = '88888888-8888-4888-8888-888888888888'
+     and target_user_id = '88888888-8888-4888-8888-888888888888'
+     and event_type = 'left'),
+  1,
+  'self-leave writes an actor/target audit event'
+);
+
+reset role;
+insert into auth.users (id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at)
+values
+  ('99999999-9999-4999-8999-999999999999', 'authenticated', 'authenticated', 'demote-leader@example.com', crypt('password', gen_salt('bf')), now(), now(), now()),
+  ('abababab-abab-4bab-8bab-abababababab', 'authenticated', 'authenticated', 'sole-approver@example.com', crypt('password', gen_salt('bf')), now(), now(), now());
+insert into public.teams (id, name, created_by)
+values ('f1f1f1f1-f1f1-4f1f-8f1f-f1f1f1f1f1f1', '降级约束团队', '99999999-9999-4999-8999-999999999999');
+insert into public.team_members (team_id, user_id, role, email, display_name)
+values
+  ('f1f1f1f1-f1f1-4f1f-8f1f-f1f1f1f1f1f1', '99999999-9999-4999-8999-999999999999', 'leader', 'demote-leader@example.com', '降级操作人'),
+  ('f1f1f1f1-f1f1-4f1f-8f1f-f1f1f1f1f1f1', 'abababab-abab-4bab-8bab-abababababab', 'leader', 'sole-approver@example.com', '唯一审批人');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"99999999-9999-4999-8999-999999999999","email":"demote-leader@example.com"}', true);
+select lives_ok(
+  $$select public.team_create_task(
+    'f2f2f2f2-f2f2-42f2-82f2-f2f2f2f2f2f2',
+    'f3f3f3f3-f3f3-43f3-83f3-f3f3f3f3f3f3',
+    'f1f1f1f1-f1f1-4f1f-8f1f-f1f1f1f1f1f1',
+    '降级审批约束', null, null, 'medium', null, '{}',
+    array['99999999-9999-4999-8999-999999999999']::uuid[],
+    array['abababab-abab-4bab-8bab-abababababab']::uuid[]
+  )$$,
+  'leader can create a task whose only non-assignee approver is another leader'
+);
+select throws_ok(
+  $$select public.team_set_member_role(
+    'f1f1f1f1-f1f1-4f1f-8f1f-f1f1f1f1f1f1',
+    'abababab-abab-4bab-8bab-abababababab',
+    'member',
+    'f2f2f2f2-f2f2-42f2-82f2-f2f2f2f2f2f4'
+  )$$,
+  'P0001',
+  'APPROVER_REQUIRED',
+  'leader demotion cannot remove the only non-assignee approver'
 );
 
 reset role;

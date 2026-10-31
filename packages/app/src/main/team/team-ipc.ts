@@ -43,6 +43,7 @@ export function registerTeamIpc(service: TeamService, onSyncState: (state: TeamS
   ipcMain.handle(IPC.teamTasksList, (_event, filter) => service.listTasks(teamTaskFilterSchema.parse(filter)));
   ipcMain.handle(IPC.teamTasksGet, (_event, taskId) => service.getTask(id(taskId)));
   ipcMain.handle(IPC.teamNotificationsList, () => service.listNotifications());
+  ipcMain.handle(IPC.teamMemberEvents, () => service.listMemberEvents());
   ipcMain.handle(IPC.teamTasksCreate, (_event, input) => service.createTask(teamTaskCreateSchema.parse(input)));
   ipcMain.handle(IPC.teamTasksUpdate, (_event, taskId, patch) =>
     service.updateTask(id(taskId), teamTaskUpdateSchema.parse(patch)));
@@ -80,12 +81,17 @@ export function registerTeamIpc(service: TeamService, onSyncState: (state: TeamS
     service.closeAssignee(id(taskId), id(assigneeId), text(reason), version(expectedVersion)));
   ipcMain.handle(IPC.teamCreateInvite, (_event, input) =>
     service.createInvite(teamInviteCreateSchema.parse(input)));
+  ipcMain.handle(IPC.teamInvitesList, () => service.listInvites());
   ipcMain.handle(IPC.teamRevokeInvite, (_event, inviteId) => service.revokeInvite(id(inviteId)));
   ipcMain.handle(IPC.teamSetMemberRole, (_event, patch) =>
     service.setMemberRole(teamRolePatchSchema.parse(patch)));
   ipcMain.handle(IPC.teamRemoveMember, (_event, userId) => service.removeMember(id(userId)));
+  ipcMain.handle(IPC.teamLeaveTeam, () => service.leaveTeam());
   ipcMain.handle(IPC.teamMarkNotificationRead, (_event, notificationId) =>
     service.markNotificationRead(id(notificationId)));
+  ipcMain.handle(IPC.teamOutboxFailures, () => service.listOutboxFailures());
+  ipcMain.handle(IPC.teamOutboxRetry, (_event, operationId) => service.retryOutbox(id(operationId)));
+  ipcMain.handle(IPC.teamOutboxDiscard, (_event, operationId) => service.discardOutbox(id(operationId)));
   ipcMain.handle(IPC.teamTaskNotes, (_event, taskId) => service.getTaskNotes(id(taskId)));
   ipcMain.handle(IPC.teamTaskEvents, (_event, taskId) => service.getTaskEvents(id(taskId)));
   ipcMain.handle(IPC.teamSync, () => service.sync());

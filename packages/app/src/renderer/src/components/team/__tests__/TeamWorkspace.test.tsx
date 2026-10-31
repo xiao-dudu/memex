@@ -17,6 +17,8 @@ const bootstrap: TeamBootstrap = {
   members: [],
   tasks: [],
   notifications: [],
+  memberEvents: [],
+  outboxFailures: [],
   sync: { phase: 'idle', pendingCount: 0, lastSyncedAt: null, message: null },
 };
 
@@ -33,6 +35,10 @@ beforeEach(() => {
     ...window.memex,
     team: {
       bootstrap: vi.fn().mockResolvedValue(bootstrap),
+      sync: vi.fn().mockResolvedValue(bootstrap.sync),
+      listTasks: vi.fn().mockResolvedValue([]),
+      listNotifications: vi.fn().mockResolvedValue([]),
+      listOutboxFailures: vi.fn().mockResolvedValue([]),
       onSyncState: vi.fn(() => () => {}),
     } as never,
   };
@@ -49,6 +55,25 @@ describe('TeamWorkspace', () => {
 
     expect(screen.getByRole('status')).toHaveTextContent('正在加载团队空间…');
     expect(screen.queryByLabelText('团队登录')).not.toBeInTheDocument();
+  });
+
+  it('refreshes renderer tasks and notifications when the window regains focus', async () => {
+    const store = createTeamStore();
+    useTeamStore.setState({
+      ...store.getState(),
+      session: bootstrap.session,
+      team: bootstrap.team,
+      loading: false,
+    }, true);
+
+    render(<TeamWorkspace />);
+    window.dispatchEvent(new Event('focus'));
+
+    await waitFor(() => {
+      expect(window.memex.team.sync).toHaveBeenCalledOnce();
+      expect(window.memex.team.listTasks).toHaveBeenCalledOnce();
+      expect(window.memex.team.listNotifications).toHaveBeenCalledOnce();
+    });
   });
 
   it('relies on the store for sync-state subscription', async () => {

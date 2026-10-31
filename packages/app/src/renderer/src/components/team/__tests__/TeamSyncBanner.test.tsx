@@ -38,4 +38,28 @@ describe('TeamSyncBanner', () => {
     retry.resolve();
     await waitFor(() => expect(button).toBeEnabled());
   });
+  it('shows failed operations with explicit retry and discard actions', async () => {
+    const retryOutbox = vi.fn().mockResolvedValue(undefined);
+    const discardOutbox = vi.fn().mockResolvedValue(undefined);
+    useTeamStore.setState({
+      syncState: { phase: 'error', pendingCount: 1, lastSyncedAt: 2, message: 'VERSION_CONFLICT' },
+      outboxFailures: [{
+        id: 'op-1',
+        type: 'start_assignee',
+        attempts: 1,
+        lastError: 'VERSION_CONFLICT',
+        createdAt: 1,
+      }],
+      retryOutbox,
+      discardOutbox,
+    });
+    render(<TeamSyncBanner />);
+
+    expect(screen.getByText(/start_assignee/)).toBeVisible();
+    expect(screen.getAllByText(/VERSION_CONFLICT/).length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole('button', { name: '重试失败操作-op-1' }));
+    expect(retryOutbox).toHaveBeenCalledWith('op-1');
+    await userEvent.click(screen.getByRole('button', { name: '丢弃失败操作-op-1' }));
+    expect(discardOutbox).toHaveBeenCalledWith('op-1');
+  });
 });

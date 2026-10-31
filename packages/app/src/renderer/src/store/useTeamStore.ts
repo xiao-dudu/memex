@@ -2,10 +2,13 @@ import { create, type StoreApi, type UseBoundStore } from 'zustand';
 import type {
   TeamBootstrap,
   TeamCreateInput,
+  TeamInvite,
   TeamInviteCreateInput,
   TeamJoinInput,
   TeamMember,
+  TeamMemberEvent,
   TeamNotification,
+  TeamOutboxFailure,
   TeamProgressNote,
   TeamRolePatch,
   TeamSessionInfo,
@@ -28,6 +31,8 @@ export interface TeamState {
   notes: TeamProgressNote[];
   events: TeamTaskEvent[];
   notifications: TeamNotification[];
+  memberEvents: TeamMemberEvent[];
+  outboxFailures: TeamOutboxFailure[];
   syncState: TeamSyncState;
   loading: boolean;
   error: string | null;
@@ -59,10 +64,14 @@ export interface TeamState {
   archiveTask(taskId: string, expectedVersion: number): Promise<void>;
   closeAssignee(taskId: string, assigneeId: string, reason: string, expectedVersion: number): Promise<void>;
   createInvite(input: TeamInviteCreateInput): Promise<string>;
+  listInvites(): Promise<TeamInvite[]>;
   revokeInvite(inviteId: string): Promise<void>;
   setMemberRole(patch: TeamRolePatch): Promise<void>;
   removeMember(userId: string): Promise<void>;
+  leaveTeam(): Promise<void>;
   markNotificationRead(id: string): Promise<void>;
+  retryOutbox(id: string): Promise<void>;
+  discardOutbox(id: string): Promise<void>;
   syncNow(): Promise<void>;
 }
 
@@ -107,6 +116,8 @@ export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
         members: value.members,
         tasks: value.tasks,
         notifications: value.notifications,
+        memberEvents: value.memberEvents,
+        outboxFailures: value.outboxFailures,
         syncState: value.sync,
         loading: false,
         error: null,
@@ -135,6 +146,10 @@ export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
         set({ loading: false });
         throw error;
       }
+    };
+    const refreshOutboxFailures = async () => {
+      const outboxFailures = await window.memex.team.listOutboxFailures();
+      set({ outboxFailures });
     };
     const reload = async () => {
       const requestId = ++reloadRequestId;
@@ -172,6 +187,8 @@ export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
       notes: [],
       events: [],
       notifications: [],
+      memberEvents: [],
+      outboxFailures: [],
       syncState: idleSync,
       loading: true,
       error: null,
@@ -180,7 +197,20 @@ export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
 
       async bootstrap() {
         if (!unsubscribeSync) {
-          unsubscribeSync = window.memex.team.onSyncState((syncState) => set({ syncState }));
+          let lastSyncedAt = get().syncState.lastSyncedAt;
+          unsubscribeSync = window.memex.team.onSyncState((syncState) => {
+            set({ syncState });
+            if (
+              syncState.lastSyncedAt !== null
+              && syncState.lastSyncedAt !== lastSyncedAt
+              && get().session.teamId
+              && !get().loading
+            ) {
+              lastSyncedAt = syncState.lastSyncedAt;
+              void reload().catch(() => undefined);
+              void refreshOutboxFailures().catch(() => undefined);
+            }
+          });
         }
         try {
           await bootstrapNow();
@@ -209,6 +239,8 @@ export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
           notes: [],
           events: [],
           notifications: [],
+          memberEvents: [],
+          outboxFailures: [],
           syncState: idleSync,
           loading: false,
           error: null,
@@ -324,6 +356,10 @@ export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
         return run(() => window.memex.team.createInvite(input));
       },
 
+      listInvites() {
+        return run(() => window.memex.team.listInvites());
+      },
+
       async revokeInvite(id) {
         await run(() => window.memex.team.revokeInvite(id));
       },
@@ -335,6 +371,11 @@ export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
 
       async removeMember(userId) {
         await run(() => window.memex.team.removeMember(userId));
+        await bootstrapNow();
+      },
+
+      async leaveTeam() {
+        await run(() => window.memex.team.leaveTeam());
         await bootstrapNow();
       },
 
@@ -362,6 +403,18 @@ export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
         }
       },
 
+      async retryOutbox(id) {
+        await run(() => window.memex.team.retryOutbox(id));
+        await run(refreshOutboxFailures);
+        await reload();
+      },
+
+      async discardOutbox(id) {
+        await run(() => window.memex.team.discardOutbox(id));
+        await run(refreshOutboxFailures);
+        await reload();
+      },
+
       async syncNow() {
         let syncState: TeamSyncState;
         try {
@@ -378,7 +431,7 @@ export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
         }
         set({ syncState });
         try {
-          await reload();
+          await Promise.all([reload(), run(refreshOutboxFailures)]);
         } catch {
           // reload already records the failure in `error`; keep the sync result intact.
         }

@@ -58,6 +58,8 @@ function fakeApi(overrides: Partial<TeamRemoteApi> = {}): TeamRemoteApi {
     revokeInvite: vi.fn(),
     setMemberRole: vi.fn(),
     removeMember: vi.fn(),
+    leaveTeam: vi.fn(),
+    listInvites: vi.fn().mockResolvedValue([]),
     pullChanges: vi.fn().mockResolvedValue({
       team: { id: teamId, name: '测试团队' },
       members: [],
@@ -65,7 +67,9 @@ function fakeApi(overrides: Partial<TeamRemoteApi> = {}): TeamRemoteApi {
       notes: [],
       events: [],
       notifications: [],
+      memberEvents: [],
       cursor: 9,
+      complete: true,
     }),
     ...overrides,
   };
@@ -124,7 +128,7 @@ describe('team sync', () => {
     expect(api.pullChanges).toHaveBeenCalledWith(teamId, 0);
     expect(cache.getMeta('cursor')).toBe('9');
     expect(state).toEqual({ phase: 'error', pendingCount: 1, lastSyncedAt: 100, message: 'VERSION_CONFLICT' });
-    expect(cache.listPending()).toEqual([
+    expect(cache.listFailed()).toEqual([
       expect.objectContaining({ id: 'op-1', status: 'failed', lastError: 'VERSION_CONFLICT' }),
     ]);
     cache.close();
@@ -144,7 +148,9 @@ describe('team sync', () => {
         notes: [],
         events: [],
         notifications: [],
+        memberEvents: [],
         cursor: 4,
+        complete: true,
       }),
     });
     const sync = createTeamSync({ api, cache, isOnline: () => true, now: () => 100 });
@@ -170,7 +176,9 @@ describe('team sync', () => {
         notes: [{ id: 'note-a', taskId: task.id, userId: 'member-1', body: '进展', createdAt: 2 }],
         events: [],
         notifications: [],
+        memberEvents: [],
         cursor: 9,
+        complete: true,
       }),
     });
     const sync = createTeamSync({ api, cache, isOnline: () => true, now: () => 100 });
@@ -185,7 +193,7 @@ describe('team sync', () => {
     cache.close();
   });
 
-  it('retries failed operations on the next sync', async () => {
+  it('does not retry failed operations until they are explicitly retried', async () => {
     const cache = openTeamCache(cachePath());
     cache.enqueue('start_assignee', { taskId: task.id, expectedVersion: 1 }, 'op-1', 1);
     const startAssignee = vi.fn()
@@ -197,16 +205,22 @@ describe('team sync', () => {
     const first = await sync.syncNow(teamId);
 
     expect(first).toEqual({ phase: 'error', pendingCount: 1, lastSyncedAt: 100, message: 'TRANSIENT' });
-    expect(cache.listPending()).toEqual([
+    expect(cache.listFailed()).toEqual([
       expect.objectContaining({ id: 'op-1', status: 'failed', lastError: 'TRANSIENT' }),
     ]);
 
     const second = await sync.syncNow(teamId);
 
+    expect(startAssignee).toHaveBeenCalledTimes(1);
+    expect(cache.listFailed()).toHaveLength(1);
+    expect(second).toEqual({ phase: 'error', pendingCount: 1, lastSyncedAt: 100, message: 'TRANSIENT' });
+
+    cache.retryOutbox('op-1');
+    const third = await sync.syncNow(teamId);
+
     expect(startAssignee).toHaveBeenCalledTimes(2);
-    expect(cache.listPending()).toEqual([]);
-    expect(cache.getMeta('cursor')).toBe('9');
-    expect(second).toEqual({ phase: 'idle', pendingCount: 0, lastSyncedAt: 100, message: null });
+    expect(cache.listFailed()).toEqual([]);
+    expect(third).toEqual({ phase: 'idle', pendingCount: 0, lastSyncedAt: 100, message: null });
     cache.close();
   });
 
@@ -274,7 +288,9 @@ describe('team sync', () => {
         notes: [note],
         events: [event],
         notifications: [notification],
+        memberEvents: [],
         cursor: 12,
+        complete: true,
       }),
     });
     const sync = createTeamSync({ api, cache, isOnline: () => true, now: () => 200 });

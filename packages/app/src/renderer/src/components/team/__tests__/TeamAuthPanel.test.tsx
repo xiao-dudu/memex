@@ -49,6 +49,7 @@ beforeEach(() => {
       bootstrap: vi.fn().mockResolvedValue(noTeamBootstrap),
       onSyncState: vi.fn(() => () => {}),
       signIn: vi.fn().mockResolvedValue(noTeamBootstrap),
+      signOut: vi.fn().mockResolvedValue(undefined),
       signUp: vi.fn().mockResolvedValue({ needsEmailConfirmation: true }),
       createTeam: vi.fn().mockResolvedValue(noTeamBootstrap),
       joinTeam: vi.fn().mockResolvedValue(noTeamBootstrap),
@@ -103,6 +104,15 @@ describe('TeamAuthPanel', () => {
     });
     const { container } = render(<TeamAuthPanel />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('offers sign-out when signed in without a team', async () => {
+    useTeamStore.setState({ session: noTeamBootstrap.session });
+    render(<TeamAuthPanel />);
+
+    await userEvent.click(screen.getByRole('button', { name: '退出登录' }));
+
+    expect(window.memex.team.signOut).toHaveBeenCalledOnce();
   });
 
   it('creates a team with the entered name', async () => {

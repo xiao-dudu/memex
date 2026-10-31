@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import type { TeamTask } from '@memex/shared';
-import { Bell, Pencil, Plus, Settings2, Users } from 'lucide-react';
+import { Bell, LogOut, Pencil, Plus, Settings2, UserMinus, Users } from 'lucide-react';
 import { deriveTeamTaskState } from '@memex/shared/team';
 import { useTeamStore } from '../../store/useTeamStore';
 import { Button } from '../ui/button';
 import { Select } from '../ui/select';
+import { ConfirmDialog } from '../ui/confirm-dialog';
 import { TeamTaskEditor } from './TeamTaskEditor';
 
 interface Props {
@@ -39,15 +40,28 @@ export function TeamTaskList({ onOpenManagement, onOpenNotifications }: Props) {
     setMemberFilter,
     selectTask,
     activeTask,
+    signOut,
+    leaveTeam,
   } = useTeamStore();
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<TeamTask | null>(null);
+  const [leaveOpen, setLeaveOpen] = useState(false);
+  const [actionError, setActionError] = useState('');
   const unread = notifications.filter((item) => item.readAt === null).length;
   const activeMembers = members.filter((item) => item.removedAt === null);
 
   const openEditor = (task: TeamTask | null = null) => {
     setEditingTask(task);
     setEditorOpen(true);
+  };
+
+  const runHeaderAction = async (action: () => Promise<void>) => {
+    setActionError('');
+    try {
+      await action();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    }
   };
 
   const canEditTask = (task: TeamTask) =>
@@ -84,7 +98,30 @@ export function TeamTaskList({ onOpenManagement, onOpenNotifications }: Props) {
             <Settings2 size={15} />
           </button>
         ) : null}
+        <button
+          type="button"
+          onClick={() => void runHeaderAction(signOut)}
+          aria-label="退出登录"
+          title="退出登录"
+          className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-[var(--hover)]"
+        >
+          <LogOut size={15} />
+        </button>
+        <button
+          type="button"
+          onClick={() => setLeaveOpen(true)}
+          aria-label="退出团队"
+          title="退出团队"
+          className="flex h-8 w-8 items-center justify-center rounded-md text-red-600 hover:bg-[var(--hover)]"
+        >
+          <UserMinus size={15} />
+        </button>
       </header>
+      {actionError ? (
+        <p role="alert" className="border-b border-[var(--line)] px-3 py-2 text-[11px] text-red-600">
+          {actionError}
+        </p>
+      ) : null}
       <div className="flex gap-1 overflow-x-auto border-b border-[var(--line)] px-2 py-2">
         {VIEWS.filter((item) => session.role === 'leader' || item.value !== 'pending_review').map(
           (item) => (
@@ -160,6 +197,17 @@ export function TeamTaskList({ onOpenManagement, onOpenNotifications }: Props) {
         ))}
       </div>
       <TeamTaskEditor open={editorOpen} task={editingTask} onClose={() => setEditorOpen(false)} />
+      <ConfirmDialog
+        open={leaveOpen}
+        title="退出团队"
+        description="退出后需要新的邀请才能重新加入。未完成分项或任务领导责任会阻止退出。"
+        confirmLabel="确认退出团队"
+        onCancel={() => setLeaveOpen(false)}
+        onConfirm={() => {
+          setLeaveOpen(false);
+          void runHeaderAction(leaveTeam);
+        }}
+      />
     </section>
   );
 }

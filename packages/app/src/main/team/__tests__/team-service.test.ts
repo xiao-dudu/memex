@@ -248,7 +248,7 @@ describe('team service', () => {
     expect(cache.getTask(task.id)).toBeNull();
   });
 
-  it('returns an offline sync state when membership refresh cannot reach Supabase', async () => {
+  it('uses the cached session to continue syncing when membership refresh cannot reach Supabase', async () => {
     const task = makeTask();
     const { cache, service, sync, membership } = deps({
       seed: (target) => {
@@ -266,10 +266,10 @@ describe('team service', () => {
 
     const state = await service.sync();
 
-    expect(state).toEqual({ phase: 'offline', pendingCount: 1, lastSyncedAt: 50, message: '等待联网' });
+    expect(state).toEqual({ phase: 'idle', pendingCount: 0, lastSyncedAt: 1, message: null });
     expect(states).toEqual([state]);
     expect(cache.getTask(task.id)).not.toBeNull();
-    expect(sync.syncNow).not.toHaveBeenCalled();
+    expect(sync.syncNow).toHaveBeenCalledWith(teamA);
     unsubscribe();
   });
 
@@ -286,16 +286,48 @@ describe('team service', () => {
     expect(sync.syncNow).toHaveBeenCalledWith(teamB);
   });
 
-  it('clears stale cache when sync reloads a changed role', async () => {
+  it('clears authorization cache but preserves outbox when sync reloads a changed role', async () => {
     const task = makeTask();
     const { cache, service, membership, sync } = deps({ seed: (target) => target.upsertTask(task) });
     cache.setTeam({ id: teamA, name: '当前团队' });
+    cache.enqueue('start_assignee', { taskId: task.id, expectedVersion: 1 }, 'op-role-change', 1);
     membership.mockResolvedValue({ data: { team_id: teamA, role: 'member' }, error: null });
 
     await service.sync();
 
     expect(cache.getTask(task.id)).toBeNull();
+    expect(cache.listPending()).toEqual([
+      expect.objectContaining({ id: 'op-role-change', type: 'start_assignee' }),
+    ]);
     expect(sync.syncNow).toHaveBeenCalledWith(teamA);
+  });
+
+  it('falls back to cached session, team, and role when membership refresh is unavailable', async () => {
+    const task = makeTask();
+    const { cache, service, membership, sync } = deps({ seed: (target) => target.upsertTask(task) });
+    cache.setTeam({ id: teamA, name: '当前团队' });
+    cache.setSessionInfo({
+      signedIn: true,
+      userId: leader.id,
+      email: leader.email,
+      displayName: leader.displayName,
+      teamId: teamA,
+      role: 'leader',
+    });
+    membership.mockRejectedValue(new Error('Failed to fetch'));
+    sync.syncNow.mockResolvedValue({ phase: 'offline', pendingCount: 0, lastSyncedAt: 50, message: '等待联网' });
+
+    const result = await service.bootstrap();
+
+    expect(result.session).toEqual(expect.objectContaining({
+      signedIn: true,
+      userId: leader.id,
+      teamId: teamA,
+      role: 'leader',
+    }));
+    expect(result.team).toEqual({ id: teamA, name: '当前团队' });
+    expect(result.tasks.map((item) => item.id)).toEqual([task.id]);
+    expect(result.sync.phase).toBe('offline');
   });
 
   it('does not expose notes or events for an invisible task', async () => {
@@ -317,6 +349,43 @@ describe('team service', () => {
 
     await expect(service.getTaskNotes(task.id)).rejects.toThrow();
     await expect(service.getTaskEvents(task.id)).rejects.toThrow();
+  });
+
+  it('rejects notification reads after membership is removed', async () => {
+    const { service, membership } = deps({
+      seed: (target) => target.upsertNotification({
+        id: 'notification-1',
+        teamId: teamA,
+        userId: leader.id,
+        type: 'assigned',
+        taskId: null,
+        title: '通知',
+        body: '内容',
+        readAt: null,
+        createdAt: 1,
+      }),
+    });
+    await service.bootstrap();
+    membership.mockResolvedValue({ data: null, error: null });
+
+    await expect(service.listNotifications()).rejects.toThrow();
+    await expect(service.markNotificationRead('notification-1')).rejects.toThrow();
+  });
+
+  it('explicitly retries and discards failed outbox rows', async () => {
+    const { cache, service } = deps({
+      seed: (target) => {
+        target.enqueue('start_assignee', { taskId: makeTask().id, expectedVersion: 1 }, 'op-1', 1);
+        target.markPending('op-1', 'failed', 'VERSION_CONFLICT');
+      },
+    });
+
+    await service.retryOutbox('op-1');
+    expect(cache.listPending()).toEqual([expect.objectContaining({ id: 'op-1', status: 'pending' })]);
+    cache.markPending('op-1', 'failed', 'VERSION_CONFLICT');
+
+    await service.discardOutbox('op-1');
+    expect(cache.listFailed()).toEqual([]);
   });
 
   it('rejects non-leader lifecycle mutations', async () => {
@@ -364,6 +433,120 @@ describe('team service', () => {
 
     await expect(service.getSession()).resolves.toEqual(bootstrapped.session);
     expect(client.getSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects reopening and mutating archived tasks', async () => {
+    const archived = makeTask({ archivedAt: 5 });
+    const { service } = deps({ seed: (cache) => cache.upsertTask(archived) });
+
+    for (const action of [
+      () => service.reopenTask(archived.id, archived.version),
+      () => service.updateTask(archived.id, { title: '不应更新', expectedVersion: archived.version }),
+    ]) {
+      let error: unknown;
+      try {
+        await action();
+      } catch (caught) {
+        error = caught;
+      }
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toBe('任务已归档');
+    }
+  });
+
+  it('does not re-add an inactive creator as a task leader during edits', async () => {
+    const task = makeTask({
+      createdBy: member.id,
+      leaders: [leader],
+      assignees: [{
+        ...member,
+        status: 'todo',
+        latestNote: null,
+        approvedBy: null,
+        approvedAt: null,
+        version: 1,
+      }],
+    });
+    const { service, cache } = deps({ seed: (target) => target.upsertTask(task) });
+
+    const updated = await service.updateTask(task.id, {
+      expectedVersion: 1,
+      leaderIds: [leader.id],
+    });
+
+    expect(updated.leaders.map((item) => item.id)).toEqual([leader.id]);
+    expect(payload(cache, 'update_task').task).toEqual(expect.objectContaining({
+      leaders: [expect.objectContaining({ id: leader.id })],
+    }));
+  });
+
+  it('rejects progress notes after an assignment is approved or closed', async () => {
+    for (const status of ['approved', 'closed'] as const) {
+      const task = makeTask({
+        assignees: [{
+          ...member,
+          status,
+          latestNote: null,
+          approvedBy: null,
+          approvedAt: null,
+          version: 2,
+        }],
+      });
+      const { service } = deps({
+        session: memberSession,
+        membership: { team_id: teamA, role: 'member' },
+        seed: (cache) => cache.upsertTask(task),
+      });
+
+      await expect(service.addProgressNote(task.id, '不应写入')).rejects.toThrow();
+    }
+  });
+
+  it('does not enqueue server work when marking a local reminder read', async () => {
+    const { cache, service } = deps({
+      seed: (target) => target.upsertNotification({
+        id: 'local:due24:task:1:leader-1',
+        teamId: teamA,
+        userId: leader.id,
+        type: 'due_soon',
+        taskId: null,
+        title: '即将到期',
+        body: '任务',
+        readAt: null,
+        createdAt: 1,
+      }),
+    });
+
+    await service.markNotificationRead('local:due24:task:1:leader-1');
+
+    expect(cache.listNotifications(leader.id)[0]?.readAt).toBe(100);
+    expect(cache.listPending()).toEqual([]);
+  });
+
+  it('rejects demoting a leader when a task would lose its non-assignee approver', async () => {
+    const task = makeTask({
+      createdBy: secondLeader.id,
+      leaders: [secondLeader],
+      assignees: [{
+        ...member,
+        status: 'todo',
+        latestNote: null,
+        approvedBy: null,
+        approvedAt: null,
+        version: 1,
+      }],
+    });
+    const { service, cache } = deps({ seed: (target) => target.upsertTask(task) });
+
+    let error: unknown;
+    try {
+      await service.setMemberRole({ userId: secondLeader.id, role: 'member' });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain('审批领导');
+    expect(cache.listMembers().find((item) => item.id === secondLeader.id)?.role).toBe('leader');
   });
 
   it('requires a non-empty note when submitting and rejects review before submission', async () => {

@@ -98,7 +98,7 @@ export function TeamTaskEditor({ open, task = null, onClose }: Props) {
   const save = async () => {
     setError('');
     const effectiveLeaders = [...new Set([session.userId!, ...leaderIds])];
-    if (!hasNonAssigneeApprover(assigneeIds, effectiveLeaders, session.userId!)) {
+    if (!hasNonAssigneeApprover(assigneeIds, effectiveLeaders)) {
       setError('至少需要一名非执行人的审批领导');
       return;
     }

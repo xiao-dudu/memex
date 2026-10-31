@@ -3,9 +3,12 @@ import {
   hasNonAssigneeApprover,
   type TeamBootstrap,
   type TeamCreateInput,
+  type TeamInvite,
   type TeamInviteCreateInput,
   type TeamJoinInput,
+  type TeamMemberEvent,
   type TeamNotification,
+  type TeamOutboxFailure,
   type TeamProgressNote,
   type TeamRolePatch,
   type TeamSessionInfo,
@@ -33,6 +36,7 @@ export interface TeamService {
   joinTeam(input: TeamJoinInput): Promise<TeamBootstrap>;
   listTasks(filter?: TeamTaskFilter): Promise<TeamTask[]>;
   listNotifications(): Promise<TeamNotification[]>;
+  listMemberEvents(): Promise<TeamMemberEvent[]>;
   getTask(id: string): Promise<TeamTask | null>;
   getTaskNotes(taskId: string): Promise<TeamProgressNote[]>;
   getTaskEvents(taskId: string): Promise<TeamTaskEvent[]>;
@@ -52,10 +56,15 @@ export interface TeamService {
   archiveTask(taskId: string, expectedVersion: number): Promise<void>;
   closeAssignee(taskId: string, assigneeId: string, reason: string, expectedVersion: number): Promise<void>;
   createInvite(input: TeamInviteCreateInput): Promise<string>;
+  listInvites(): Promise<TeamInvite[]>;
   revokeInvite(inviteId: string): Promise<void>;
   setMemberRole(patch: TeamRolePatch): Promise<void>;
   removeMember(userId: string): Promise<void>;
+  leaveTeam(): Promise<void>;
   markNotificationRead(id: string): Promise<void>;
+  listOutboxFailures(): Promise<TeamOutboxFailure[]>;
+  retryOutbox(id: string): Promise<void>;
+  discardOutbox(id: string): Promise<void>;
   sync(): Promise<TeamSyncState>;
   onSyncState(callback: (state: TeamSyncState) => void): () => void;
 }
@@ -109,12 +118,21 @@ export function createTeamService({
   };
 
   const reconcileCache = (current: TeamSessionInfo, previous: TeamSessionInfo) => {
-    const changed = previous.signedIn && (
+    const scopeChanged = previous.signedIn && (
       previous.userId !== current.userId
       || previous.teamId !== current.teamId
-      || previous.role !== current.role
     );
-    if (changed || !cacheMatchesSession(current)) cache.clear();
+    const roleChanged = previous.signedIn
+      && previous.userId === current.userId
+      && previous.teamId === current.teamId
+      && previous.role !== current.role;
+    const cachedTeam = cache.getTeam();
+    const cachedTeamMismatch = cachedTeam !== null && cachedTeam.id !== current.teamId;
+    if (!current.signedIn || !current.teamId || !current.role || scopeChanged || cachedTeamMismatch) {
+      cache.clear();
+    } else if (roleChanged || !cacheMatchesSession(current)) {
+      cache.clearAuthorizationData();
+    }
   };
 
   const offlineSyncState = (): TeamSyncState => {
@@ -128,30 +146,18 @@ export function createTeamService({
     };
   };
 
-  const loadSession = async (): Promise<TeamSessionInfo> => {
-    const auth = await client.getSession();
-    if (!auth) {
-      realtime?.stop();
-      session = signedOutSession();
-      return session;
-    }
-    const { data, error } = await client
-      .getSupabase()
-      .from('team_members')
-      .select('team_id, role')
-      .eq('user_id', auth.userId)
-      .eq('status', 'active')
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    session = {
-      signedIn: true,
-      userId: auth.userId,
-      email: auth.email,
-      displayName: auth.displayName,
-      teamId: data?.team_id ?? null,
-      role: data?.role ?? null,
-    };
-    const teamId = session.teamId;
+  const cachedSessionFor = (auth: { userId: string; email: string; displayName: string } | null) => {
+    const cached = cache.getSessionInfo();
+    if (!cached?.signedIn) return null;
+    if (auth && cached.userId !== auth.userId) return null;
+    if (cached.teamId && cache.getTeam()?.id !== cached.teamId) return null;
+    return auth
+      ? { ...cached, email: auth.email, displayName: auth.displayName }
+      : cached;
+  };
+
+  const watchSession = (current: TeamSessionInfo) => {
+    const teamId = current.teamId;
     if (teamId) {
       realtime?.watch(teamId, () => {
         void sync
@@ -162,6 +168,57 @@ export function createTeamService({
     } else {
       realtime?.stop();
     }
+  };
+
+  const loadSession = async (): Promise<TeamSessionInfo> => {
+    let auth: Awaited<ReturnType<TeamClient['getSession']>>;
+    try {
+      auth = await client.getSession();
+    } catch (error) {
+      const cached = cachedSessionFor(null);
+      if (cached) {
+        session = cached;
+        watchSession(session);
+        return session;
+      }
+      throw error;
+    }
+    if (!auth) {
+      realtime?.stop();
+      session = signedOutSession();
+      return session;
+    }
+
+    let data: { team_id: string; role: 'leader' | 'member' } | null = null;
+    try {
+      const result = await client
+        .getSupabase()
+        .from('team_members')
+        .select('team_id, role')
+        .eq('user_id', auth.userId)
+        .eq('status', 'active')
+        .maybeSingle();
+      if (result.error) throw new Error(result.error.message);
+      data = result.data;
+    } catch (error) {
+      const cached = cachedSessionFor(auth);
+      if (!cached) throw error;
+      session = cached;
+      cache.setSessionInfo(session);
+      watchSession(session);
+      return session;
+    }
+
+    session = {
+      signedIn: true,
+      userId: auth.userId,
+      email: auth.email,
+      displayName: auth.displayName,
+      teamId: data?.team_id ?? null,
+      role: data?.role ?? null,
+    };
+    cache.setSessionInfo(session);
+    watchSession(session);
     return session;
   };
 
@@ -176,6 +233,8 @@ export function createTeamService({
         members: [],
         tasks: [],
         notifications: [],
+        memberEvents: [],
+        outboxFailures: [],
         sync: { phase: 'idle', pendingCount: 0, lastSyncedAt: null, message: null },
       };
     }
@@ -187,6 +246,14 @@ export function createTeamService({
       members: cache.listMembers(),
       tasks: cache.listTasks({ view: 'all' }, current.userId!, current.role, now()),
       notifications: cache.listNotifications(current.userId!),
+      memberEvents: cache.listMemberEvents(),
+      outboxFailures: cache.listFailed().map(({ id, type, attempts, lastError, createdAt }) => ({
+        id,
+        type,
+        attempts,
+        lastError,
+        createdAt,
+      })),
       sync: state,
     };
   };
@@ -243,6 +310,22 @@ export function createTeamService({
     .listMembers()
     .filter((member) => member.role === 'leader' && member.removedAt === null)
     .map((member) => member.id);
+
+  const affectedTasksForMember = (userId: string) => cache
+    .listTasks({ view: 'all' }, session.userId ?? '', session.role ?? 'member', now())
+    .filter((task) => task.createdBy === userId || task.leaders.some((leader) => leader.id === userId));
+
+  const requireDemotionSafe = (userId: string) => {
+    const remainingLeaders = new Set(activeLeaderIds().filter((id) => id !== userId));
+    for (const task of affectedTasksForMember(userId)) {
+      const nextLeaderIds = task.leaders
+        .map((leader) => leader.id)
+        .filter((id) => id !== userId && remainingLeaders.has(id));
+      if (!hasNonAssigneeApprover(task.assignees.map((item) => item.id), nextLeaderIds)) {
+        throw new Error('至少需要一名非执行人的审批领导');
+      }
+    }
+  };
 
   const findVisibleTask = async (id: string): Promise<TeamTask | null> => {
     const current = await requireSession();
@@ -308,6 +391,11 @@ export function createTeamService({
       const current = await requireSession();
       return cache.listNotifications(current.userId);
     },
+    async listMemberEvents() {
+      const current = await requireSession();
+      requireLeader(current);
+      return cache.listMemberEvents();
+    },
     async getTask(id) {
       return findVisibleTask(id);
     },
@@ -326,7 +414,7 @@ export function createTeamService({
       requireLeader(current);
       const leaderIds = [...new Set([current.userId, ...input.leaderIds])];
       const assigneeIds = [...new Set(input.assigneeIds)];
-      if (!hasNonAssigneeApprover(assigneeIds, leaderIds, current.userId)) {
+      if (!hasNonAssigneeApprover(assigneeIds, leaderIds)) {
         throw new Error('至少需要一名非执行人的审批领导');
       }
       const members = cache.listMembers();
@@ -396,7 +484,7 @@ export function createTeamService({
       if (assigneeIds || leaderIds) {
         const members = cache.listMembers();
         if (leaderIds) {
-          const nextLeaderIds = [...new Set([existing.createdBy, ...leaderIds])];
+          const nextLeaderIds = [...new Set(leaderIds)];
           const leaders = nextLeaderIds
             .map((memberId) => members.find((item) => item.id === memberId))
             .filter((item) => item !== undefined);
@@ -448,7 +536,6 @@ export function createTeamService({
       if (!hasNonAssigneeApprover(
         next.assignees.map((item) => item.id),
         next.leaders.map((item) => item.id),
-        next.createdBy,
       )) {
         throw new Error('至少需要一名非执行人的审批领导');
       }
@@ -545,6 +632,7 @@ export function createTeamService({
       const task = cache.getTask(taskId);
       if (!task) throw new Error('任务不存在');
       requireTaskEditor(current, task);
+      requireOpenTask(task);
       requireTaskVersion(task, expectedVersion);
       if (task.assignees.length === 0 || task.assignees.some(
         (assignee) => assignee.status !== 'approved' && assignee.status !== 'closed',
@@ -601,30 +689,108 @@ export function createTeamService({
     },
     async createInvite(input) {
       const current = await requireSession();
+      requireLeader(current);
       if (!isOnline()) throw new Error('创建邀请需要联网');
       return api.createInvite(randomId(), current.teamId, input.email, now() + input.expiresInHours * 3_600_000);
     },
+    async listInvites() {
+      const current = await requireSession();
+      requireLeader(current);
+      if (!isOnline()) throw new Error('查看邀请需要联网');
+      return api.listInvites(current.teamId);
+    },
     async revokeInvite(inviteId) {
       const current = await requireSession();
+      requireLeader(current);
       queue('revoke_invite', { inviteId });
       emit(await sync.syncNow(current.teamId));
     },
     async setMemberRole(patch) {
       const current = await requireSession();
+      requireLeader(current);
+      const target = cache.listMembers().find(
+        (member) => member.id === patch.userId && member.removedAt === null,
+      );
+      if (!target) throw new Error('成员不存在');
+      if (target.role === 'leader' && patch.role === 'member') requireDemotionSafe(patch.userId);
+
+      cache.replaceMembers(cache.listMembers().map((member) =>
+        member.id === patch.userId ? { ...member, role: patch.role } : member));
+      if (patch.role === 'member') {
+        for (const task of affectedTasksForMember(patch.userId)) {
+          replaceTask({
+            ...task,
+            leaders: task.leaders.filter((leader) => leader.id !== patch.userId),
+          });
+        }
+      }
       queue('set_member_role', { teamId: current.teamId, userId: patch.userId, role: patch.role });
       emit(await sync.syncNow(current.teamId));
     },
     async removeMember(userId) {
       const current = await requireSession();
+      requireLeader(current);
+      if (userId === current.userId) throw new Error('请使用退出团队');
+      const target = cache.listMembers().find(
+        (member) => member.id === userId && member.removedAt === null,
+      );
+      if (!target) throw new Error('成员不存在');
+      if (target.role === 'leader' && activeLeaderIds().length <= 1) throw new Error('不能移除最后一名领导');
+      const tasks = cache.listTasks({ view: 'all' }, current.userId, current.role, now());
+      if (tasks.some((task) => task.assignees.some(
+        (assignee) => assignee.id === userId && !['approved', 'closed'].includes(assignee.status),
+      ))) {
+        throw new Error('成员仍有未完成的分项，请先关闭');
+      }
+      if (tasks.some((task) => task.leaders.some((leader) => leader.id === userId))) {
+        throw new Error('成员仍负责任务，请先转移领导');
+      }
       queue('remove_member', { teamId: current.teamId, userId });
       emit(await sync.syncNow(current.teamId));
+    },
+    async leaveTeam() {
+      const current = await requireSession();
+      if (!isOnline()) throw new Error('退出团队需要联网');
+      await api.leaveTeam(randomId(), current.teamId);
+      realtime?.stop();
+      cache.clear();
+      session = {
+        signedIn: true,
+        userId: current.userId,
+        email: current.email,
+        displayName: current.displayName,
+        teamId: null,
+        role: null,
+      };
+      cache.setSessionInfo(session);
     },
     async markNotificationRead(id) {
       const current = await requireSession();
       const notification = cache.listNotifications(current.userId).find((item) => item.id === id);
       if (!notification) throw new Error('通知不存在');
       cache.upsertNotification({ ...notification, readAt: now() });
+      if (id.startsWith('local:')) return;
       queue('mark_notification_read', { notificationId: id });
+      emit(await sync.syncNow(current.teamId));
+    },
+    async listOutboxFailures() {
+      await requireSession();
+      return cache.listFailed().map(({ id, type, attempts, lastError, createdAt }) => ({
+        id,
+        type,
+        attempts,
+        lastError,
+        createdAt,
+      }));
+    },
+    async retryOutbox(id) {
+      const current = await requireSession();
+      if (!cache.retryOutbox(id)) throw new Error('失败操作不存在');
+      emit(await sync.syncNow(current.teamId));
+    },
+    async discardOutbox(id) {
+      const current = await requireSession();
+      if (!cache.discardOutbox(id)) throw new Error('失败操作不存在');
       emit(await sync.syncNow(current.teamId));
     },
     async sync() {

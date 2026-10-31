@@ -4,6 +4,7 @@ import { Archive, Check, RotateCcw, X } from 'lucide-react';
 import { canApproveAssignee, deriveTeamTaskState } from '@memex/shared/team';
 import { useTeamStore } from '../../store/useTeamStore';
 import { Button } from '../ui/button';
+import { Input } from '../ui/input';
 import { canEditTeamTask, TeamTaskDescriptionDrawer } from './TeamTaskDescriptionDrawer';
 
 const STATUS_LABEL = {
@@ -41,13 +42,28 @@ export function TeamTaskDetail() {
     notes,
     events,
     startAssignee,
+    addProgressNote,
     submitAssignee,
     reviewAssignee,
+    closeAssignee,
     reopenTask,
     archiveTask,
   } = useTeamStore();
   const [descriptionOpen, setDescriptionOpen] = useState(false);
   const [note, setNote] = useState('');
+  const [progressNote, setProgressNote] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [closingAssigneeId, setClosingAssigneeId] = useState<string | null>(null);
+  const [closeReason, setCloseReason] = useState('');
+
+  const runAction = async (action: () => Promise<void>) => {
+    setActionError('');
+    try {
+      await action();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    }
+  };
 
   if (!activeTask) {
     return (
@@ -74,12 +90,27 @@ export function TeamTaskDetail() {
 
   const submit = async () => {
     if (!mine || !note.trim() || archived) return;
-    await submitAssignee(activeTask.id, note.trim(), mine.version);
-    setNote('');
+    await runAction(async () => {
+      await submitAssignee(activeTask.id, note.trim(), mine.version);
+      setNote('');
+    });
+  };
+
+  const addNote = async () => {
+    if (!progressNote.trim() || archived) return;
+    await runAction(async () => {
+      await addProgressNote(activeTask.id, progressNote.trim());
+      setProgressNote('');
+    });
   };
 
   return (
     <section className="thin-scroll min-w-0 flex-1 overflow-y-auto bg-[var(--surface-2)] p-5">
+      {actionError ? (
+        <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-2 text-[12px] text-red-700">
+          {actionError}
+        </p>
+      ) : null}
       <header className="border-b border-[var(--line)] pb-4">
         <div className="flex items-start gap-3">
           <h1 className="min-w-0 flex-1 text-xl font-semibold">{activeTask.title}</h1>
@@ -138,13 +169,13 @@ export function TeamTaskDetail() {
                       size="sm"
                       aria-label="通过分项"
                       onClick={() =>
-                        void reviewAssignee(
+                        void runAction(() => reviewAssignee(
                           activeTask.id,
                           assignee.id,
                           'approve',
                           null,
                           assignee.version,
-                        )
+                        ))
                       }
                     >
                       <Check size={13} /> 通过
@@ -154,13 +185,13 @@ export function TeamTaskDetail() {
                       variant="outline"
                       aria-label="退回分项"
                       onClick={() =>
-                        void reviewAssignee(
+                        void runAction(() => reviewAssignee(
                           activeTask.id,
                           assignee.id,
                           'return',
                           '请补充后重新提交',
                           assignee.version,
-                        )
+                        ))
                       }
                     >
                       <X size={13} /> 退回
@@ -173,11 +204,86 @@ export function TeamTaskDetail() {
                   最新备注：{assignee.latestNote}
                 </p>
               ) : null}
+              {canEdit && !['approved', 'closed'].includes(assignee.status) ? (
+                closingAssigneeId === assignee.id ? (
+                  <div className="mt-2 space-y-2 rounded-lg bg-[var(--surface-2)] p-2">
+                    <label className="block text-[11px]" htmlFor={`close-reason-${assignee.id}`}>
+                      关闭原因-{assignee.displayName}
+                    </label>
+                    <Input
+                      id={`close-reason-${assignee.id}`}
+                      aria-label={`关闭原因-${assignee.displayName}`}
+                      value={closeReason}
+                      onChange={(event) => setCloseReason(event.target.value)}
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        aria-label={`确认关闭分项-${assignee.displayName}`}
+                        disabled={!closeReason.trim()}
+                        onClick={() => void runAction(async () => {
+                          await closeAssignee(
+                            activeTask.id,
+                            assignee.id,
+                            closeReason.trim(),
+                            assignee.version,
+                          );
+                          setClosingAssigneeId(null);
+                          setCloseReason('');
+                        })}
+                      >
+                        确认关闭
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setClosingAssigneeId(null);
+                          setCloseReason('');
+                        }}
+                      >
+                        取消
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    className="mt-2"
+                    size="sm"
+                    variant="outline"
+                    aria-label={`关闭分项-${assignee.displayName}`}
+                    onClick={() => {
+                      setClosingAssigneeId(assignee.id);
+                      setCloseReason('');
+                    }}
+                  >
+                    关闭分项
+                  </Button>
+                )
+              ) : null}
             </article>
           );
         })}
       </div>
 
+      {!archived && mine && ['todo', 'doing', 'submitted'].includes(mine.status) ? (
+        <div className="mt-5 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">
+          <label className="text-[12px] font-medium" htmlFor="team-extra-progress-note">
+            补充进展备注
+          </label>
+          <textarea
+            id="team-extra-progress-note"
+            aria-label="补充进展备注"
+            value={progressNote}
+            onChange={(event) => setProgressNote(event.target.value)}
+            className="mt-2 min-h-16 w-full rounded-lg border border-[var(--line)] bg-[var(--surface-2)] p-2 text-[12px] outline-none"
+            placeholder="可随时补充进展；已通过或已关闭的分项不能再添加"
+          />
+          <Button className="mt-2" disabled={!progressNote.trim()} onClick={() => void addNote()}>
+            添加进展备注
+          </Button>
+        </div>
+      ) : null}
       {!archived && mine && mine.status === 'doing' ? (
         <div className="mt-5 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">
           <label className="text-[12px] font-medium" htmlFor="team-progress-note">
@@ -196,7 +302,7 @@ export function TeamTaskDetail() {
         </div>
       ) : null}
       {!archived && mine?.status === 'todo' ? (
-        <Button className="mt-4" onClick={() => void startAssignee(activeTask.id, mine.version)}>
+        <Button className="mt-4" onClick={() => void runAction(() => startAssignee(activeTask.id, mine.version))}>
           开始处理
         </Button>
       ) : null}
@@ -235,14 +341,14 @@ export function TeamTaskDetail() {
           {terminal ? (
             <Button
               variant="outline"
-              onClick={() => void reopenTask(activeTask.id, activeTask.version)}
+              onClick={() => void runAction(() => reopenTask(activeTask.id, activeTask.version))}
             >
               <RotateCcw size={13} /> 重新打开任务
             </Button>
           ) : null}
           <Button
             variant="danger"
-            onClick={() => void archiveTask(activeTask.id, activeTask.version)}
+            onClick={() => void runAction(() => archiveTask(activeTask.id, activeTask.version))}
           >
             <Archive size={13} /> 归档任务
           </Button>

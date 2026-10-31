@@ -264,6 +264,21 @@ describe('TeamTaskList', () => {
     expect(screen.queryByRole('button', { name: '编辑团队任务-交付方案' })).not.toBeInTheDocument();
   });
 
+  it('exposes sign-out and confirmed self-leave actions', async () => {
+    const signOut = vi.fn().mockResolvedValue(undefined);
+    const leaveTeam = vi.fn().mockResolvedValue(undefined);
+    useTeamStore.setState({ signOut, leaveTeam });
+    render(<TeamTaskList onOpenManagement={vi.fn()} onOpenNotifications={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole('button', { name: '退出登录' }));
+    expect(signOut).toHaveBeenCalledOnce();
+
+    await userEvent.click(screen.getByRole('button', { name: '退出团队' }));
+    expect(await screen.findByRole('alertdialog', { name: '退出团队' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '确认退出团队' }));
+    expect(leaveTeam).toHaveBeenCalledOnce();
+  });
+
   it('marks the active task view with aria-pressed', () => {
     render(<TeamTaskList onOpenManagement={vi.fn()} onOpenNotifications={vi.fn()} />);
     expect(screen.getByRole('button', { name: '全部任务' })).toHaveAttribute('aria-pressed', 'true');

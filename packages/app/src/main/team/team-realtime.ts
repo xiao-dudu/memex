@@ -38,6 +38,7 @@ export function createTeamRealtime(supabase: SupabaseClient): TeamRealtime {
         'team_task_assignees',
         'team_task_progress_notes',
         'team_task_events',
+        'team_member_events',
         'team_notifications',
       ]) {
         channel = channel.on(

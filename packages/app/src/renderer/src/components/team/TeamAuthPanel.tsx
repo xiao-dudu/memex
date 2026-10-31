@@ -5,7 +5,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 
 export function TeamAuthPanel() {
-  const { session, error, signIn, signUp, bootstrap, createTeam, joinTeam } = useTeamStore();
+  const { session, error, signIn, signUp, signOut, bootstrap, createTeam, joinTeam } = useTeamStore();
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -147,6 +147,13 @@ export function TeamAuthPanel() {
             {error}
           </p>
         ) : null}
+        <button
+          type="button"
+          onClick={() => void run(signOut)}
+          className="w-full text-[12px] text-[var(--muted)] hover:text-[var(--ink)]"
+        >
+          退出登录
+        </button>
       </div>
     </section>
   );

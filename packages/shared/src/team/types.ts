@@ -106,6 +106,23 @@ export interface TeamNotification {
   createdAt: number;
 }
 
+export interface TeamMemberEvent {
+  id: string;
+  teamId: string;
+  actorId: string;
+  targetUserId: string;
+  type: 'removed' | 'left';
+  createdAt: number;
+}
+
+export interface TeamOutboxFailure {
+  id: string;
+  type: string;
+  attempts: number;
+  lastError: string | null;
+  createdAt: number;
+}
+
 export interface TeamInvite {
   id: string;
   teamId: string;
@@ -140,6 +157,8 @@ export interface TeamBootstrap {
   members: TeamMember[];
   tasks: TeamTask[];
   notifications: TeamNotification[];
+  memberEvents: TeamMemberEvent[];
+  outboxFailures: TeamOutboxFailure[];
   sync: TeamSyncState;
 }
 

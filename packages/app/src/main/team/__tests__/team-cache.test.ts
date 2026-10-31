@@ -73,7 +73,9 @@ function changes(overrides: Partial<TeamChangeSet> = {}): TeamChangeSet {
     notes: [note()],
     events: [event()],
     notifications: [],
+    memberEvents: [],
     cursor: 6,
+    complete: true,
     ...overrides,
   };
 }
@@ -103,7 +105,7 @@ describe('team cache', () => {
     expect(cache.listPending()).toEqual([expect.objectContaining({ id: 'op-1', type: 'start_assignee', status: 'pending' })]);
     expect(cache.countOutbox()).toBe(1);
     cache.markPending('op-1', 'failed', 'offline');
-    expect(cache.listPending()).toEqual([
+    expect(cache.listFailed()).toEqual([
       expect.objectContaining({ id: 'op-1', status: 'failed', lastError: 'offline' }),
     ]);
     expect(cache.countOutbox()).toBe(1);
@@ -206,7 +208,9 @@ describe('team cache', () => {
       notes: [{ ...note(), id: 'note-atomic' }],
       events: [{ ...event(), id: 'event-atomic' }],
       notifications: [],
+      memberEvents: [],
       cursor: 6,
+      complete: true,
     }, 6)).toThrow();
 
     expect(cache.getMeta('cursor')).toBe('5');
@@ -231,6 +235,90 @@ describe('team cache', () => {
     expect(cache.listMembers()).toEqual([]);
     expect(cache.listNotes(task().id)).toEqual([]);
     expect(cache.listEvents(task().id)).toEqual([]);
+    cache.close();
+  });
+
+  it('preserves outbox rows when clearing authorization-sensitive cache data', () => {
+    const cache = openTeamCache(cachePath());
+    cache.setTeam({ id: teamId, name: '测试团队' });
+    cache.setSessionInfo({
+      signedIn: true,
+      userId: 'leader-1',
+      email: 'leader@example.com',
+      displayName: '领导',
+      teamId,
+      role: 'leader',
+    });
+    cache.upsertTask(task());
+    cache.enqueue('start_assignee', { taskId: task().id, expectedVersion: 1 }, 'op-1', 12);
+
+    cache.clearAuthorizationData();
+
+    expect(cache.getTask(task().id)).toBeNull();
+    expect(cache.getTeam()).toEqual({ id: teamId, name: '测试团队' });
+    expect(cache.getSessionInfo()).toEqual(expect.objectContaining({ userId: 'leader-1', teamId }));
+    expect(cache.listPending()).toEqual([expect.objectContaining({ id: 'op-1' })]);
+    cache.close();
+  });
+
+  it('does not prune local rows for an incomplete snapshot', () => {
+    const cache = openTeamCache(cachePath());
+    cache.mergeChanges(changes({ cursor: 6 }), 6);
+    const replacementTask = { ...task(), id: '44444444-4444-4444-8444-444444444444', title: '新任务' };
+
+    cache.mergeChanges({
+      team: { id: teamId, name: '测试团队' },
+      members: [{ ...member(), displayName: '更新后的成员' }],
+      tasks: [replacementTask],
+      notes: [],
+      events: [],
+      notifications: [],
+      memberEvents: [],
+      cursor: 7,
+      complete: false,
+    }, 7);
+
+    expect(cache.getTask(task().id)).not.toBeNull();
+    expect(cache.getTask(replacementTask.id)).not.toBeNull();
+    expect(cache.listMembers()[0]?.displayName).toBe('更新后的成员');
+    expect(cache.getMeta('cursor')).toBe('6');
+
+    cache.mergeChanges({
+      team: { id: teamId, name: '测试团队' },
+      members: [member()],
+      tasks: [replacementTask],
+      notes: [],
+      events: [],
+      notifications: [],
+      memberEvents: [],
+      cursor: 8,
+      complete: true,
+    }, 8);
+
+    expect(cache.getTask(task().id)).toBeNull();
+    expect(cache.getTask(replacementTask.id)).not.toBeNull();
+    expect(cache.getMeta('cursor')).toBe('8');
+    cache.close();
+  });
+
+  it('exposes failed outbox rows and supports explicit retry and discard', () => {
+    const cache = openTeamCache(cachePath());
+    cache.enqueue('start_assignee', { taskId: task().id }, 'op-1', 1);
+    cache.markPending('op-1', 'failed', 'VERSION_CONFLICT');
+
+    expect(cache.listPending()).toEqual([]);
+    expect(cache.listFailed()).toEqual([
+      expect.objectContaining({ id: 'op-1', status: 'failed', lastError: 'VERSION_CONFLICT', attempts: 1 }),
+    ]);
+
+    expect(cache.retryOutbox('op-1')).toBe(true);
+    expect(cache.listFailed()).toEqual([]);
+    expect(cache.listPending()).toEqual([expect.objectContaining({ id: 'op-1', status: 'pending' })]);
+
+    cache.markPending('op-1', 'failed', 'VERSION_CONFLICT');
+    expect(cache.discardOutbox('op-1')).toBe(true);
+    expect(cache.listFailed()).toEqual([]);
+    expect(cache.countOutbox()).toBe(0);
     cache.close();
   });
 

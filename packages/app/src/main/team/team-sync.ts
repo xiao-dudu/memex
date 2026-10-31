@@ -1,5 +1,7 @@
 import type {
+  TeamInvite,
   TeamMember,
+  TeamMemberEvent,
   TeamNotification,
   TeamProgressNote,
   TeamSyncState,
@@ -14,8 +16,10 @@ export interface TeamChangeSet {
   tasks: TeamTask[];
   notes: TeamProgressNote[];
   events: TeamTaskEvent[];
+  memberEvents: TeamMemberEvent[];
   notifications: TeamNotification[];
   cursor: number;
+  complete: boolean;
 }
 
 export interface TeamRemoteApi {
@@ -48,6 +52,8 @@ export interface TeamRemoteApi {
   revokeInvite(operationId: string, inviteId: string): Promise<void>;
   setMemberRole(operationId: string, teamId: string, userId: string, role: 'leader' | 'member'): Promise<void>;
   removeMember(operationId: string, teamId: string, userId: string): Promise<void>;
+  leaveTeam(operationId: string, teamId: string): Promise<void>;
+  listInvites(teamId: string): Promise<TeamInvite[]>;
   pullChanges(teamId: string, cursor: number): Promise<TeamChangeSet>;
 }
 
@@ -139,6 +145,8 @@ export function createTeamSync({ api, cache, isOnline, now }: SyncOptions): Team
         return api.setMemberRole(id, payload.teamId!, payload.userId!, payload.role!);
       case 'remove_member':
         return api.removeMember(id, payload.teamId!, payload.userId!);
+      case 'leave_team':
+        return api.leaveTeam(id, payload.teamId!);
       default:
         throw new Error(`UNKNOWN_OPERATION:${type}`);
     }
@@ -167,13 +175,22 @@ export function createTeamSync({ api, cache, isOnline, now }: SyncOptions): Team
         const changes = await api.pullChanges(teamId, cursor);
         const syncedAt = now();
         cache.mergeChanges(changes, changes.cursor);
+        if (!changes.complete) {
+          return {
+            phase: 'error',
+            pendingCount: cache.countOutbox(),
+            lastSyncedAt: null,
+            message: '同步快照不完整，已保留本地数据',
+          };
+        }
         cache.setMeta('lastSyncedAt', String(syncedAt));
-        if (firstOutboxError) {
+        const failed = cache.listFailed();
+        if (firstOutboxError || failed.length > 0) {
           return {
             phase: 'error',
             pendingCount: cache.countOutbox(),
             lastSyncedAt: syncedAt,
-            message: firstOutboxError,
+            message: firstOutboxError ?? failed[0]?.lastError ?? '存在同步失败操作',
           };
         }
         return { phase: 'idle', pendingCount: cache.countOutbox(), lastSyncedAt: syncedAt, message: null };

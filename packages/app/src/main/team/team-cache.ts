@@ -5,9 +5,11 @@ import {
   openDatabase,
   type MemexDatabase,
   type TeamMember,
+  type TeamMemberEvent,
   type TeamNotification,
   type TeamProgressNote,
   type TeamRole,
+  type TeamSessionInfo,
   type TeamTask,
   type TeamTaskEvent,
   type TeamTaskFilter,
@@ -54,6 +56,10 @@ CREATE TABLE IF NOT EXISTS team_events (
   id TEXT PRIMARY KEY, task_id TEXT NOT NULL, actor_id TEXT NOT NULL, type TEXT NOT NULL,
   target_user_id TEXT, from_status TEXT, to_status TEXT, created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS team_member_events (
+  id TEXT PRIMARY KEY, team_id TEXT NOT NULL, actor_id TEXT NOT NULL, target_user_id TEXT NOT NULL,
+  type TEXT NOT NULL, created_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS team_notifications (
   id TEXT PRIMARY KEY, team_id TEXT NOT NULL, user_id TEXT NOT NULL, type TEXT NOT NULL,
   task_id TEXT, title TEXT NOT NULL, body TEXT NOT NULL, read_at INTEGER, created_at INTEGER NOT NULL
@@ -65,11 +71,14 @@ CREATE TABLE IF NOT EXISTS team_outbox (
 CREATE INDEX IF NOT EXISTS team_outbox_status ON team_outbox(status, created_at);
 CREATE INDEX IF NOT EXISTS team_notes_task ON team_notes(task_id, user_id, created_at);
 CREATE INDEX IF NOT EXISTS team_events_task ON team_events(task_id, created_at);
+CREATE INDEX IF NOT EXISTS team_member_events_team ON team_member_events(team_id, created_at);
 `;
 
 export interface TeamCache {
   setMeta(key: string, value: string): void;
   getMeta(key: string): string | null;
+  setSessionInfo(session: TeamSessionInfo): void;
+  getSessionInfo(): TeamSessionInfo | null;
   replaceMembers(members: TeamMember[]): void;
   setTeam(team: { id: string; name: string }): void;
   getTeam(): { id: string; name: string } | null;
@@ -81,13 +90,19 @@ export interface TeamCache {
   listNotes(taskId: string): TeamProgressNote[];
   appendEvent(event: TeamTaskEvent): void;
   listEvents(taskId: string): TeamTaskEvent[];
+  upsertMemberEvent(event: TeamMemberEvent): void;
+  listMemberEvents(): TeamMemberEvent[];
   upsertNotification(notification: TeamNotification): void;
   listNotifications(userId: string): TeamNotification[];
   enqueue(type: string, payload: unknown, id: string, createdAt: number): void;
   listPending(): OutboxRow[];
+  listFailed(): OutboxRow[];
   countOutbox(): number;
   mergeChanges(changes: TeamChangeSet, cursor: number): void;
   markPending(id: string, status: OutboxStatus, lastError: string | null): void;
+  retryOutbox(id: string): boolean;
+  discardOutbox(id: string): boolean;
+  clearAuthorizationData(): void;
   clear(): void;
   close(): void;
 }
@@ -158,6 +173,28 @@ function createTeamCache(db: MemexDatabase): TeamCache {
     };
   };
 
+  const writeMember = (member: TeamMember) => {
+    db.prepare(`
+      INSERT INTO team_members(user_id, team_id, email, display_name, role, joined_at, removed_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(user_id) DO UPDATE SET
+        team_id = excluded.team_id,
+        email = excluded.email,
+        display_name = excluded.display_name,
+        role = excluded.role,
+        joined_at = excluded.joined_at,
+        removed_at = excluded.removed_at
+    `).run(
+      member.id,
+      member.teamId,
+      member.email,
+      member.displayName,
+      member.role,
+      member.joinedAt,
+      member.removedAt,
+    );
+  };
+
   const cache: TeamCache = {
     setMeta(key, value) {
       db.prepare('INSERT INTO team_meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
@@ -169,15 +206,26 @@ function createTeamCache(db: MemexDatabase): TeamCache {
       return row?.value ?? null;
     },
 
+    setSessionInfo(value) {
+      cache.setMeta('session', JSON.stringify(value));
+    },
+
+    getSessionInfo() {
+      const raw = cache.getMeta('session');
+      if (!raw) return null;
+      try {
+        const parsed = JSON.parse(raw) as TeamSessionInfo;
+        if (typeof parsed !== 'object' || parsed === null || typeof parsed.signedIn !== 'boolean') return null;
+        return parsed;
+      } catch {
+        return null;
+      }
+    },
+
     replaceMembers(members) {
       const apply = db.transaction(() => {
         db.prepare('DELETE FROM team_members').run();
-        for (const member of members) {
-          db.prepare(`
-            INSERT INTO team_members(user_id, team_id, email, display_name, role, joined_at, removed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-          `).run(member.id, member.teamId, member.email, member.displayName, member.role, member.joinedAt, member.removedAt);
-        }
+        for (const member of members) writeMember(member);
       });
       apply();
     },
@@ -340,6 +388,32 @@ function createTeamCache(db: MemexDatabase): TeamCache {
         }));
     },
 
+    upsertMemberEvent(event) {
+      db.prepare(`
+        INSERT INTO team_member_events(id, team_id, actor_id, target_user_id, type, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          team_id = excluded.team_id,
+          actor_id = excluded.actor_id,
+          target_user_id = excluded.target_user_id,
+          type = excluded.type,
+          created_at = excluded.created_at
+      `).run(event.id, event.teamId, event.actorId, event.targetUserId, event.type, event.createdAt);
+    },
+
+    listMemberEvents() {
+      return (db.prepare('SELECT * FROM team_member_events ORDER BY created_at DESC, id DESC')
+        .all() as Record<string, unknown>[])
+        .map((row) => ({
+          id: String(row.id),
+          teamId: String(row.team_id),
+          actorId: String(row.actor_id),
+          targetUserId: String(row.target_user_id),
+          type: row.type as TeamMemberEvent['type'],
+          createdAt: Number(row.created_at),
+        }));
+    },
+
     upsertNotification(notification) {
       db.prepare(`
         INSERT INTO team_notifications(id, team_id, user_id, type, task_id, title, body, read_at, created_at)
@@ -380,7 +454,21 @@ function createTeamCache(db: MemexDatabase): TeamCache {
     },
 
     listPending() {
-      return (db.prepare("SELECT * FROM team_outbox WHERE status IN ('pending', 'failed') ORDER BY created_at, id")
+      return (db.prepare("SELECT * FROM team_outbox WHERE status = 'pending' ORDER BY created_at, id")
+        .all() as Record<string, unknown>[])
+        .map((row) => ({
+          id: String(row.id),
+          type: String(row.type),
+          payloadJson: String(row.payload_json),
+          status: row.status as OutboxStatus,
+          attempts: Number(row.attempts),
+          lastError: row.last_error === null ? null : String(row.last_error),
+          createdAt: Number(row.created_at),
+        }));
+    },
+
+    listFailed() {
+      return (db.prepare("SELECT * FROM team_outbox WHERE status = 'failed' ORDER BY created_at, id")
         .all() as Record<string, unknown>[])
         .map((row) => ({
           id: String(row.id),
@@ -403,6 +491,34 @@ function createTeamCache(db: MemexDatabase): TeamCache {
         .run(status, lastError, id);
     },
 
+    retryOutbox(id) {
+      return db.prepare("UPDATE team_outbox SET status = 'pending', last_error = NULL WHERE id = ? AND status = 'failed'")
+        .run(id).changes > 0;
+    },
+
+    discardOutbox(id) {
+      return db.prepare('DELETE FROM team_outbox WHERE id = ?').run(id).changes > 0;
+    },
+
+    clearAuthorizationData() {
+      const apply = db.transaction(() => {
+        db.prepare("DELETE FROM team_meta WHERE key NOT LIKE 'shown:%' AND key <> 'session'").run();
+        for (const table of [
+          'team_members',
+          'team_tasks',
+          'team_task_leaders',
+          'team_task_assignees',
+          'team_notes',
+          'team_events',
+          'team_member_events',
+          'team_notifications',
+        ]) {
+          db.prepare(`DELETE FROM ${table}`).run();
+        }
+      });
+      apply();
+    },
+
     clear() {
       const apply = db.transaction(() => {
         db.prepare("DELETE FROM team_meta WHERE key NOT LIKE 'shown:%'").run();
@@ -414,6 +530,7 @@ function createTeamCache(db: MemexDatabase): TeamCache {
           'team_task_assignees',
           'team_notes',
           'team_events',
+          'team_member_events',
           'team_notifications',
           'team_outbox',
         ]) {
@@ -435,30 +552,58 @@ function createTeamCache(db: MemexDatabase): TeamCache {
         if (!Number.isFinite(current) || current < 0) throw new Error('INVALID_CURSOR');
         if (cursor < current) throw new Error('CURSOR_REGRESSION');
 
-        const serverTaskIds = new Set(changes.tasks.map((task) => task.id));
-        const localTaskIds = db.prepare('SELECT id FROM team_tasks').all() as { id: string }[];
-        for (const { id } of localTaskIds) {
-          if (serverTaskIds.has(id)) continue;
-          db.prepare('DELETE FROM team_task_assignees WHERE task_id = ?').run(id);
-          db.prepare('DELETE FROM team_task_leaders WHERE task_id = ?').run(id);
-          db.prepare('DELETE FROM team_notes WHERE task_id = ?').run(id);
-          db.prepare('DELETE FROM team_events WHERE task_id = ?').run(id);
-          db.prepare('DELETE FROM team_tasks WHERE id = ?').run(id);
+        const complete = changes.complete === true;
+        if (complete) {
+          const serverTaskIds = new Set(changes.tasks.map((task) => task.id));
+          const localTaskIds = db.prepare('SELECT id FROM team_tasks').all() as { id: string }[];
+          for (const { id } of localTaskIds) {
+            if (serverTaskIds.has(id)) continue;
+            db.prepare('DELETE FROM team_task_assignees WHERE task_id = ?').run(id);
+            db.prepare('DELETE FROM team_task_leaders WHERE task_id = ?').run(id);
+            db.prepare('DELETE FROM team_notes WHERE task_id = ?').run(id);
+            db.prepare('DELETE FROM team_events WHERE task_id = ?').run(id);
+            db.prepare('DELETE FROM team_tasks WHERE id = ?').run(id);
+          }
+
+          const serverNoteIds = new Set(changes.notes.map((note) => note.id));
+          const localNoteIds = db.prepare('SELECT id FROM team_notes').all() as { id: string }[];
+          for (const { id } of localNoteIds) {
+            if (!serverNoteIds.has(id)) db.prepare('DELETE FROM team_notes WHERE id = ?').run(id);
+          }
+
+          const serverEventIds = new Set(changes.events.map((event) => event.id));
+          const localEventIds = db.prepare('SELECT id FROM team_events').all() as { id: string }[];
+          for (const { id } of localEventIds) {
+            if (!serverEventIds.has(id)) db.prepare('DELETE FROM team_events WHERE id = ?').run(id);
+          }
+
+          const serverMemberEventIds = new Set(changes.memberEvents.map((event) => event.id));
+          const localMemberEventIds = db.prepare('SELECT id FROM team_member_events').all() as { id: string }[];
+          for (const { id } of localMemberEventIds) {
+            if (!serverMemberEventIds.has(id)) db.prepare('DELETE FROM team_member_events WHERE id = ?').run(id);
+          }
+
+          const serverNotificationIds = new Set(changes.notifications.map((notification) => notification.id));
+          const localNotifications = db.prepare('SELECT id FROM team_notifications').all() as { id: string }[];
+          for (const { id } of localNotifications) {
+            if (!id.startsWith('local:') && !serverNotificationIds.has(id)) {
+              db.prepare('DELETE FROM team_notifications WHERE id = ?').run(id);
+            }
+          }
         }
 
-        const serverNoteIds = new Set(changes.notes.map((note) => note.id));
-        const localNoteIds = db.prepare('SELECT id FROM team_notes').all() as { id: string }[];
-        for (const { id } of localNoteIds) {
-          if (!serverNoteIds.has(id)) db.prepare('DELETE FROM team_notes WHERE id = ?').run(id);
+        if (complete) {
+          cache.replaceMembers(changes.members);
+        } else {
+          for (const member of changes.members) writeMember(member);
         }
-
-        cache.replaceMembers(changes.members);
         if (changes.team) cache.setTeam(changes.team);
         for (const note of changes.notes) cache.appendNote(note);
         for (const event of changes.events) cache.appendEvent(event);
+        for (const event of changes.memberEvents) cache.upsertMemberEvent(event);
         for (const task of changes.tasks) cache.upsertTask(task);
         for (const notification of changes.notifications) cache.upsertNotification(notification);
-        cache.setMeta('cursor', String(cursor));
+        if (complete) cache.setMeta('cursor', String(cursor));
       });
       apply();
     },

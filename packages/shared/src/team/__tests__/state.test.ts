@@ -105,9 +105,9 @@ describe('team task state', () => {
   });
 
   it('requires at least one approver outside the assignee list', () => {
-    expect(hasNonAssigneeApprover(['member-1'], ['leader-creator'], 'leader-creator')).toBe(true);
-    expect(hasNonAssigneeApprover(['leader-creator'], ['leader-creator'], 'leader-creator')).toBe(false);
-    expect(hasNonAssigneeApprover(['leader-creator'], ['leader-2'], 'leader-creator')).toBe(true);
+    expect(hasNonAssigneeApprover(['member-1'], ['leader-creator'])).toBe(true);
+    expect(hasNonAssigneeApprover(['leader-creator'], ['leader-creator'])).toBe(false);
+    expect(hasNonAssigneeApprover(['leader-creator'], ['leader-2'])).toBe(true);
   });
 
   it('limits member visibility to assigned tasks', () => {

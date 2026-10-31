@@ -11,9 +11,9 @@ export function deriveTeamTaskState(task: TeamTask): TeamTaskState {
   return 'in_progress';
 }
 
-export function hasNonAssigneeApprover(assigneeIds: string[], leaderIds: string[], creatorId: string): boolean {
+export function hasNonAssigneeApprover(assigneeIds: string[], leaderIds: string[]): boolean {
   const assignees = new Set(assigneeIds);
-  return [...new Set([creatorId, ...leaderIds])].some((id) => !assignees.has(id));
+  return [...new Set(leaderIds)].some((id) => !assignees.has(id));
 }
 
 export function canApproveAssignee(task: TeamTask, actorId: string, assigneeId: string, activeLeaderIds: string[]): boolean {

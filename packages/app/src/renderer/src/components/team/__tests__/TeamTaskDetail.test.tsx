@@ -158,6 +158,8 @@ function resetStore(overrides: Partial<TeamState> = {}) {
       reviewAssignee: vi.fn().mockResolvedValue(undefined),
       startAssignee: vi.fn().mockResolvedValue(undefined),
       submitAssignee: vi.fn().mockResolvedValue(undefined),
+      addProgressNote: vi.fn().mockResolvedValue(undefined),
+      closeAssignee: vi.fn().mockResolvedValue(undefined),
       reopenTask: vi.fn().mockResolvedValue(undefined),
       archiveTask: vi.fn().mockResolvedValue(undefined),
       ...overrides,
@@ -509,6 +511,75 @@ describe('TeamTaskDetail', () => {
     resetStore();
     render(<TeamTaskDetail />);
     expect(screen.queryByRole('button', { name: '重新打开任务' })).not.toBeInTheDocument();
+  });
+
+  it('lets assignees add repeated progress notes', async () => {
+    const doingTask: TeamTask = {
+      ...task,
+      assignees: task.assignees.map((item) =>
+        item.id === member.id ? { ...item, status: 'doing', version: 3 } : item,
+      ),
+    };
+    const addProgressNote = vi.fn().mockResolvedValue(undefined);
+    resetStore({
+      session: {
+        signedIn: true,
+        userId: member.id,
+        email: member.email,
+        displayName: member.displayName,
+        teamId: task.teamId,
+        role: 'member',
+      },
+      activeTask: doingTask,
+      tasks: [doingTask],
+      addProgressNote,
+    });
+    render(<TeamTaskDetail />);
+
+    await userEvent.type(screen.getByLabelText('补充进展备注'), '补充交付物');
+    await userEvent.click(screen.getByRole('button', { name: '添加进展备注' }));
+
+    expect(addProgressNote).toHaveBeenCalledWith(doingTask.id, '补充交付物');
+  });
+
+  it('lets leaders close an unfinished assignment with a reason', async () => {
+    const closeAssignee = vi.fn().mockResolvedValue(undefined);
+    resetStore({ closeAssignee });
+    render(<TeamTaskDetail />);
+
+    await userEvent.click(screen.getByRole('button', { name: '关闭分项-成员' }));
+    await userEvent.type(screen.getByLabelText('关闭原因-成员'), '成员已离开项目');
+    await userEvent.click(screen.getByRole('button', { name: '确认关闭分项-成员' }));
+
+    expect(closeAssignee).toHaveBeenCalledWith(task.id, member.id, '成员已离开项目', 2);
+  });
+
+  it('surfaces task-detail action failures', async () => {
+    const doingTask: TeamTask = {
+      ...task,
+      assignees: task.assignees.map((item) =>
+        item.id === member.id ? { ...item, status: 'doing', version: 3 } : item,
+      ),
+    };
+    resetStore({
+      session: {
+        signedIn: true,
+        userId: member.id,
+        email: member.email,
+        displayName: member.displayName,
+        teamId: task.teamId,
+        role: 'member',
+      },
+      activeTask: doingTask,
+      tasks: [doingTask],
+      submitAssignee: vi.fn().mockRejectedValue(new Error('提交失败')),
+    });
+    render(<TeamTaskDetail />);
+
+    await userEvent.type(screen.getByLabelText('本次进度备注'), '交付说明');
+    await userEvent.click(screen.getByRole('button', { name: '提交团队验收' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('提交失败');
   });
 
   it('shows note authors and human-readable audit events with actor and target names', () => {

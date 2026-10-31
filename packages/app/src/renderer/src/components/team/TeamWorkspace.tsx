@@ -21,11 +21,18 @@ export function TeamWorkspace() {
 
     const timer = window.setInterval(() => void syncNow(), 30_000);
     const onOnline = () => void syncNow();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void syncNow();
+    };
     window.addEventListener('online', onOnline);
+    window.addEventListener('focus', onVisible);
+    document.addEventListener('visibilitychange', onVisible);
 
     return () => {
       window.clearInterval(timer);
       window.removeEventListener('online', onOnline);
+      window.removeEventListener('focus', onVisible);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [session.teamId, syncNow]);
 
