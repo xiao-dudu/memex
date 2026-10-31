@@ -123,29 +123,27 @@ export function TeamTaskDescriptionDrawer({ task, open, onClose }: Props) {
       });
       const active = useTeamStore.getState().activeTask;
       if (active?.id === taskId) versionsRef.current[taskId] = active.version;
+
+      const current = descriptionDrafts.get(taskId);
+      if (current?.contentJson === draft.contentJson) descriptionDrafts.delete(taskId);
+
+      if (activeTaskIdRef.current === taskId) {
+        if (current?.contentJson === draft.contentJson || !current) {
+          setSaveState('saved');
+          scheduleIdle();
+        } else {
+          setSaveState('saving');
+        }
+      }
     } catch (error) {
       const current = descriptionDrafts.get(taskId);
       if (current) descriptionDrafts.set(taskId, { ...current, error: errorMessage(error) });
-      inFlightTaskRef.current = null;
       if (activeTaskIdRef.current === taskId) setSaveState('error');
-      return;
+    } finally {
+      inFlightTaskRef.current = null;
+      const nextTaskId = nextPendingTaskId();
+      if (nextTaskId) void drain(nextTaskId);
     }
-
-    inFlightTaskRef.current = null;
-    const current = descriptionDrafts.get(taskId);
-    if (current?.contentJson === draft.contentJson) descriptionDrafts.delete(taskId);
-
-    if (activeTaskIdRef.current === taskId) {
-      if (current?.contentJson === draft.contentJson || !current) {
-        setSaveState('saved');
-        scheduleIdle();
-      } else {
-        setSaveState('saving');
-      }
-    }
-
-    const nextTaskId = nextPendingTaskId();
-    if (nextTaskId) void drain(nextTaskId);
   };
 
   const flush = (taskId = task.id, retryError = false) => {

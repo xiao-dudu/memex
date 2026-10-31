@@ -396,6 +396,48 @@ describe('TeamTaskDetail', () => {
     );
   });
 
+  it('drains task B after an in-flight task A save fails', async () => {
+    const firstSave = deferred<void>();
+    const updateTask = vi
+      .fn()
+      .mockReturnValueOnce(firstSave.promise)
+      .mockResolvedValueOnce(undefined);
+    resetStore({ tasks: [task, task2], updateTask });
+    render(<TeamTaskDetail />);
+
+    await userEvent.click(screen.getByRole('button', { name: '打开团队任务描述' }));
+    await userEvent.click(screen.getByRole('button', { name: '写入草稿一' }));
+    await userEvent.click(screen.getByRole('button', { name: '保存描述草稿' }));
+    expect(updateTask).toHaveBeenCalledTimes(1);
+    await userEvent.click(screen.getByRole('button', { name: '关闭' }));
+
+    act(() => {
+      useTeamStore.setState({ activeTask: task2 });
+    });
+    await userEvent.click(screen.getByRole('button', { name: '打开团队任务描述' }));
+    await userEvent.click(screen.getByRole('button', { name: '写入草稿二' }));
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 550));
+    });
+    expect(updateTask).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      firstSave.reject(new Error('VERSION_CONFLICT'));
+      try {
+        await firstSave.promise;
+      } catch {
+        // The queue handles the failed task A write.
+      }
+    });
+
+    await waitFor(() => expect(updateTask).toHaveBeenCalledTimes(2));
+    expect(updateTask).toHaveBeenNthCalledWith(
+      2,
+      task2.id,
+      expect.objectContaining({ description: '草稿二' }),
+    );
+  });
+
   it('renders archived tasks as read-only', async () => {
     const archivedTask: TeamTask = {
       ...task,
