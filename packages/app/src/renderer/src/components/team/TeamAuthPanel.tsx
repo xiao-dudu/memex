@@ -5,7 +5,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 
 export function TeamAuthPanel() {
-  const { session, error, signIn, signUp, createTeam, joinTeam } = useTeamStore();
+  const { session, error, signIn, signUp, bootstrap, createTeam, joinTeam } = useTeamStore();
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -34,7 +34,11 @@ export function TeamAuthPanel() {
         await signIn({ email, password });
       } else {
         const result = await signUp({ email, password, displayName });
-        setMessage(result.needsEmailConfirmation ? '请先打开邮箱完成确认，再回来登录。' : '注册成功。');
+        if (result.needsEmailConfirmation) {
+          setMessage('请先打开邮箱完成确认，再回来登录。');
+        } else {
+          await bootstrap();
+        }
       }
     });
   };
@@ -85,7 +89,11 @@ export function TeamAuthPanel() {
               {error}
             </p>
           ) : null}
-          {message ? <p className="text-[12px] text-[var(--muted)]">{message}</p> : null}
+          {message ? (
+            <p role="status" aria-live="polite" className="text-[12px] text-[var(--muted)]">
+              {message}
+            </p>
+          ) : null}
           <Button type="submit" disabled={busy} className="w-full">
             <LogIn size={14} /> {mode === 'login' ? '登录团队' : '注册团队'}
           </Button>
@@ -100,6 +108,8 @@ export function TeamAuthPanel() {
       </section>
     );
   }
+
+  if (session.teamId !== null) return null;
 
   return (
     <section className="flex flex-1 items-center justify-center bg-[var(--surface)] p-8" aria-label="加入团队">
