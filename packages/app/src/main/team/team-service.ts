@@ -658,3 +658,14 @@ export function createTeamService({
     },
   };
 }
+
+export function createUnavailableTeamService(): TeamService {
+  return new Proxy({} as TeamService, {
+    get(_target, property) {
+      if (property === 'onSyncState') return () => () => undefined;
+      return async () => {
+        throw new Error('团队服务未配置');
+      };
+    },
+  });
+}

@@ -31,6 +31,35 @@ pnpm --filter @memex/app dist
 
 Windows 安装包输出到 `release/Memex-Setup-1.2.2.exe`。
 
+## 团队模式
+
+团队模式使用 Supabase 托管团队任务、账号和邀请。个人任务仍然只保存在本机 `memex.db`，不会上传。
+
+### 本地开发
+
+```bash
+pnpm dlx supabase start
+pnpm dlx supabase db reset
+MEMEX_SUPABASE_URL=http://127.0.0.1:54321 \
+MEMEX_SUPABASE_ANON_KEY=<local anon key> \
+pnpm dev
+```
+
+### 发布配置
+
+在 GitHub 仓库 Secrets 中配置：
+
+- `MEMEX_SUPABASE_URL`
+- `MEMEX_SUPABASE_ANON_KEY`
+
+两者会在构建时注入应用。Anon key 是公开客户端密钥，真正的权限由数据库 RLS 和 RPC 控制。
+
+### 数据边界
+
+- 个人任务、个人笔记、周报和本地设置不会进入团队后端。
+- 团队任务内容对受控 Supabase 项目可见，一期不做端到端加密。
+- 退出团队会清除本地团队缓存和加密登录令牌。
+
 ## 自动更新
 
 应用内「设置 → 软件更新」可以检查 GitHub Releases 上的新版本，并一键下载、校验、静默安装和重启。

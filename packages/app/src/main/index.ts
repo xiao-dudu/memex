@@ -14,11 +14,11 @@ import { initUpdateService } from './updater.js';
 import { getTeamConfig } from './team/team-config.js';
 import { createEncryptedSessionStorage } from './team/team-session-storage.js';
 import { createTeamClient } from './team/team-client.js';
-import { openTeamCache } from './team/team-cache.js';
+import { openTeamCache, type TeamCache } from './team/team-cache.js';
 import { createTeamSync } from './team/team-sync.js';
 import { createTeamRemoteApi } from './team/team-remote-api.js';
 import { createTeamRealtime } from './team/team-realtime.js';
-import { createTeamService } from './team/team-service.js';
+import { createTeamService, createUnavailableTeamService, type TeamService } from './team/team-service.js';
 import { registerTeamIpc } from './team/team-ipc.js';
 import { createTeamNotificationController } from './team/team-notifications.js';
 
@@ -47,6 +47,8 @@ if (!hasLock) {
     attachTimerWidgetToWindow(window);
 
     const teamConfig = getTeamConfig();
+    let teamService: TeamService;
+    let teamCache: TeamCache | null = null;
     if (teamConfig.configured) {
       const cache = openTeamCache(join(app.getPath('userData'), 'team-cache.db'));
       const storage = createEncryptedSessionStorage(join(app.getPath('userData'), 'team-session.bin'), safeStorage);
@@ -54,7 +56,8 @@ if (!hasLock) {
       const api = createTeamRemoteApi(client.getSupabase());
       const sync = createTeamSync({ api, cache, isOnline: () => true, now: Date.now });
       const realtime = createTeamRealtime(client.getSupabase());
-      const teamService = createTeamService({
+      teamCache = cache;
+      teamService = createTeamService({
         client,
         cache,
         sync,
@@ -64,7 +67,6 @@ if (!hasLock) {
         randomId: randomUUID,
         isOnline: () => true,
       });
-      registerTeamIpc(teamService, (state) => getMainWindow()?.webContents.send(IPC.teamSyncState, state));
       const notifications = createTeamNotificationController({
         cache,
         notify: (title, body) => {
@@ -83,11 +85,12 @@ if (!hasLock) {
         void teamService.sync().catch(() => undefined);
         void runNotifications().catch(() => undefined);
       });
-      app.on('before-quit', () => {
-        clearInterval(notificationTimer);
-        cache.close();
-      });
+      app.on('before-quit', () => clearInterval(notificationTimer));
+    } else {
+      teamService = createUnavailableTeamService();
     }
+    registerTeamIpc(teamService, (state) => getMainWindow()?.webContents.send(IPC.teamSyncState, state));
+    app.on('before-quit', () => teamCache?.close());
     window.on('close', (event) => {
       if (quitting) return;
       const closeToTray = getRepositories().settings.get().closeToTray;

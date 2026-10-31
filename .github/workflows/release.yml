@@ -42,6 +42,9 @@ jobs:
           pnpm test
 
       - name: Build
+        env:
+          MEMEX_SUPABASE_URL: ${{ secrets.MEMEX_SUPABASE_URL }}
+          MEMEX_SUPABASE_ANON_KEY: ${{ secrets.MEMEX_SUPABASE_ANON_KEY }}
         run: pnpm build
 
       - name: Package Windows installer
