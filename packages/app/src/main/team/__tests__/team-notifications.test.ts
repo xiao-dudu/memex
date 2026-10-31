@@ -93,6 +93,45 @@ describe('team notifications', () => {
     cache.close();
   });
 
+  it('does not show a scanned local reminder again through showUnread', () => {
+    const cache = openTeamCache(cachePath());
+    cache.upsertTask({ ...task, dueAt: 2_000 });
+    const notify = vi.fn();
+    const controller = createTeamNotificationController({ cache, notify, now: () => 2_000 });
+
+    expect(controller.scanDue(session)).toBe(1);
+    expect(controller.showUnread(session)).toBe(0);
+    expect(notify).toHaveBeenCalledTimes(1);
+    cache.close();
+  });
+
+  it('reminds a leader who is an active assignee', () => {
+    const cache = openTeamCache(cachePath());
+    cache.upsertTask({
+      ...task,
+      dueAt: 2_000,
+      assignees: [{
+        ...task.assignees[0]!,
+        id: 'leader-2',
+        email: 'leader2@example.com',
+        displayName: 'Leader Two',
+        status: 'doing',
+      }],
+    });
+    const notify = vi.fn();
+    const leaderSession = {
+      ...session,
+      userId: 'leader-2',
+      email: 'leader2@example.com',
+      displayName: 'Leader Two',
+      role: 'leader' as const,
+    };
+    const controller = createTeamNotificationController({ cache, notify, now: () => 2_000 });
+
+    expect(controller.scanDue(leaderSession)).toBe(1);
+    expect(notify).toHaveBeenCalledWith('任务已逾期', task.title);
+    cache.close();
+  });
   it('keeps a read due notification read on later scans', () => {
     const cache = openTeamCache(cachePath());
     cache.upsertTask({ ...task, dueAt: 2_000 });
@@ -120,4 +159,31 @@ describe('team notifications', () => {
     expect(notify).not.toHaveBeenCalled();
     cache.close();
   });
+
+  it.each(['approved', 'closed'] as const)(
+    'does not remind an assignee with %s status while the task remains active',
+    (status) => {
+      const cache = openTeamCache(cachePath());
+      cache.upsertTask({
+        ...task,
+        dueAt: 2_000,
+        assignees: [
+          { ...task.assignees[0]!, status },
+          {
+            ...task.assignees[0]!,
+            id: 'member-2',
+            email: 'm2@example.com',
+            displayName: 'Member Two',
+            status: 'doing',
+          },
+        ],
+      });
+      const notify = vi.fn();
+      const controller = createTeamNotificationController({ cache, notify, now: () => 2_000 });
+
+      expect(controller.scanDue(session)).toBe(0);
+      expect(notify).not.toHaveBeenCalled();
+      cache.close();
+    },
+  );
 });

@@ -34,7 +34,7 @@ export function createTeamNotificationController({ cache, notify, now }: Options
       if (!session.userId) return 0;
       let shown = 0;
       for (const notification of cache.listNotifications(session.userId)) {
-        if (notification.readAt !== null) continue;
+        if (notification.readAt !== null || notification.id.startsWith('local:')) continue;
         if (showOnce(`server:${notification.id}`, notification.title, notification.body)) shown += 1;
       }
       return shown;
@@ -46,9 +46,10 @@ export function createTeamNotificationController({ cache, notify, now }: Options
       let shown = 0;
       for (const task of visibleTasks(session)) {
         if (task.dueAt === null || deriveTeamTaskState(task) !== 'in_progress') continue;
-        const relevant = session.role === 'leader'
-          ? task.createdBy === session.userId || task.leaders.some((leader) => leader.id === session.userId)
-          : task.assignees.some((assignee) => assignee.id === session.userId);
+        const relevant = task.createdBy === session.userId
+          || task.leaders.some((leader) => leader.id === session.userId)
+          || task.assignees.some((assignee) => assignee.id === session.userId
+            && ['todo', 'doing', 'submitted'].includes(assignee.status));
         if (!relevant) continue;
         const dueKey = `${task.id}:${task.dueAt}:${session.userId}`;
         if (task.dueAt <= current) {

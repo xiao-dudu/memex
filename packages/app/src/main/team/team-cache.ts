@@ -405,8 +405,8 @@ function createTeamCache(db: MemexDatabase): TeamCache {
 
     clear() {
       const apply = db.transaction(() => {
+        db.prepare("DELETE FROM team_meta WHERE key NOT LIKE 'shown:%'").run();
         for (const table of [
-          'team_meta',
           'team_info',
           'team_members',
           'team_tasks',

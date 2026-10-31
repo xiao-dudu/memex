@@ -249,4 +249,18 @@ describe('team cache', () => {
     reopened.close();
     clearTeamCache(path);
   });
+
+  it('preserves notification dedupe metadata when clearing the cache', () => {
+    const cache = openTeamCache(cachePath());
+    cache.setMeta('sync_version', '7');
+    cache.setMeta('shown:local:overdue:task-1:2000:member-1', '1');
+    cache.setTeam({ id: teamId, name: '交付团队' });
+
+    cache.clear();
+
+    expect(cache.getMeta('sync_version')).toBeNull();
+    expect(cache.getMeta('shown:local:overdue:task-1:2000:member-1')).toBe('1');
+    expect(cache.getTeam()).toBeNull();
+    cache.close();
+  });
 });
