@@ -12,7 +12,7 @@
     "build:e2e": "cross-env MEMEX_SUPABASE_URL= MEMEX_SUPABASE_ANON_KEY= pnpm build",
     "dev": "pnpm build:shared && pnpm --filter @memex/app dev",
     "test": "pnpm build:shared && pnpm -r test",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "pnpm build:shared && pnpm -r typecheck",
     "dist": "pnpm build && pnpm --filter @memex/app dist",
     "test:e2e": "pnpm build:e2e && playwright test",
     "test:e2e:team": "pnpm build:e2e && playwright test e2e/team.spec.ts"
