@@ -18,7 +18,7 @@ import {
 import { useState } from 'react';
 import { motion } from 'motion/react';
 import type { NoteView, Tag, TaskView } from '@memex/shared';
-import { useAppStore } from '../../store/useAppStore';
+import { useAppStore, type AppModule } from '../../store/useAppStore';
 import { useReportStore } from '../../store/useReportStore';
 import { cn } from '../ui/utils';
 import { ConfirmDialog } from '../ui/confirm-dialog';
@@ -37,14 +37,14 @@ const NOTE_VIEWS: { view: NoteView; label: string; icon: typeof StickyNote; coun
   { view: 'trash', label: '回收站', icon: Trash2, countKey: 'trash' },
 ];
 
-const MODULES: { id: 'tasks' | 'notes' | 'reports' | 'team'; label: string; icon: typeof ListTodo }[] = [
+const MODULES: { id: AppModule; label: string; icon: typeof ListTodo }[] = [
   { id: 'tasks', label: '任务', icon: CheckCircle2 },
   { id: 'notes', label: '笔记', icon: StickyNote },
   { id: 'reports', label: '周报', icon: FileText },
   { id: 'team', label: '团队', icon: Users },
 ];
 
-const CREATE_LABELS: Record<'tasks' | 'notes' | 'reports' | 'team', string> = {
+const CREATE_LABELS: Record<AppModule, string> = {
   tasks: '新建任务',
   notes: '新建笔记',
   reports: '新建周报',
@@ -87,7 +87,7 @@ export function Sidebar() {
     await refresh();
   };
 
-  const createIn = (target: 'tasks' | 'notes' | 'reports' | 'team') => {
+  const createIn = (target: AppModule) => {
     if (target === 'team') {
       setModule('team');
       return;
@@ -203,7 +203,7 @@ export function Sidebar() {
       </div>
 
       <nav className="thin-scroll mt-4 flex-1 overflow-y-auto px-3">
-        {module === 'reports' ? (
+        {module === 'team' ? null : module === 'reports' ? (
           <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-3 shadow-sm">
             <div className="flex items-center gap-2 text-[13px] font-medium text-[var(--ink)]">
               <FileText size={14} className="text-[var(--accent)]" />

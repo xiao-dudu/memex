@@ -75,11 +75,12 @@ describe('App 在外部写入后的刷新', () => {
     expect(refreshCalls).toBe(0);
   });
 
-  it('团队模块渲染团队工作区', async () => {
+  it('团队模块挂载工作区并隐藏个人列表与详情', async () => {
     useAppStore.setState({ module: 'team' });
-    render(<App />);
+    const { container } = render(<App />);
 
     expect(await screen.findByLabelText('团队登录')).toBeInTheDocument();
+    expect(container.querySelector('div.hidden')).toBeInTheDocument();
   });
 
   it('团队模块下 Ctrl+N 不创建个人任务或笔记', async () => {
