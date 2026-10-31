@@ -35,6 +35,7 @@ const task: TeamTask = {
 };
 
 beforeEach(() => {
+  Element.prototype.scrollIntoView = vi.fn();
   const store = createTeamStore();
   useTeamStore.setState(
     {
@@ -226,6 +227,33 @@ describe('TeamTaskList', () => {
     await userEvent.keyboard('{Escape}');
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(trigger).toHaveFocus();
+  });
+
+  it('keeps the editor open while using the priority dropdown', async () => {
+    render(<TeamTaskList onOpenManagement={vi.fn()} onOpenNotifications={vi.fn()} />);
+    await userEvent.click(screen.getByRole('button', { name: '新建团队任务' }));
+    const priority = screen.getByRole('button', { name: '优先级' });
+
+    await userEvent.click(priority);
+    expect(screen.getByRole('listbox')).toHaveFocus();
+    await userEvent.keyboard('{ArrowDown}{Enter}');
+    expect(priority).toHaveTextContent('高');
+    expect(screen.getByRole('dialog', { name: '新建团队任务' })).toBeVisible();
+
+    await userEvent.click(priority);
+    expect(screen.getByRole('listbox')).toHaveFocus();
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument());
+    expect(screen.getByRole('dialog', { name: '新建团队任务' })).toBeVisible();
+    expect(priority).toHaveFocus();
+  });
+
+  it('hides the edit action for archived tasks', () => {
+    useTeamStore.setState({ tasks: [{ ...task, archivedAt: 1 }] });
+    render(<TeamTaskList onOpenManagement={vi.fn()} onOpenNotifications={vi.fn()} />);
+
+    expect(screen.getByText('已归档', { selector: 'span' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: '编辑团队任务-交付方案' })).not.toBeInTheDocument();
   });
 
   it('marks the active task view with aria-pressed', () => {

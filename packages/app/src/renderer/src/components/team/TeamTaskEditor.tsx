@@ -57,6 +57,7 @@ export function TeamTaskEditor({ open, task = null, onClose }: Props) {
     dialogRef.current?.querySelector<HTMLElement>('[data-autofocus]')?.focus();
 
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.target instanceof Element && event.target.closest('[role="listbox"]')) return;
       if (event.key === 'Escape') {
         event.preventDefault();
         onCloseRef.current();

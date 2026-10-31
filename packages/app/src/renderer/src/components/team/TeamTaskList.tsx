@@ -52,6 +52,7 @@ export function TeamTaskList({ onOpenManagement, onOpenNotifications }: Props) {
 
   const canEditTask = (task: TeamTask) =>
     session.role === 'leader' &&
+    task.archivedAt === null &&
     (task.createdBy === session.userId || task.leaders.some((leader) => leader.id === session.userId));
 
   return (
