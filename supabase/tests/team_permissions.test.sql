@@ -609,14 +609,14 @@ select throws_ok(
 select throws_ok(
   $$select public.team_set_member_role('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111', 'member', '44444444-4444-4444-8444-444444444445')$$,
   'P0001',
-  'LAST_LEADER',
-  'last leader cannot be demoted'
+  'APPROVER_REQUIRED',
+  'leader demotion cannot remove the only valid approver'
 );
 select throws_ok(
   $$select public.team_remove_member('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111', '44444444-4444-4444-8444-444444444446')$$,
   'P0001',
-  'LAST_LEADER',
-  'last leader cannot be removed'
+  'TASK_LEADERSHIP_NOT_TRANSFERRED',
+  'leader removal cannot bypass task leadership transfer'
 );
 select throws_ok(
   $$select public.team_remove_member('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '33333333-3333-4333-8333-333333333333', '44444444-4444-4444-8444-444444444452')$$,
@@ -801,14 +801,18 @@ select throws_ok(
 );
 
 reset role;
+insert into auth.users (id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at)
+values ('acacacac-acac-4cac-8cac-acacacacacac', 'authenticated', 'authenticated', 'terminal-note@example.com', crypt('password', gen_salt('bf')), now(), now(), now());
+insert into public.team_members (team_id, user_id, role, email, display_name)
+values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'acacacac-acac-4cac-8cac-acacacacacac', 'member', 'terminal-note@example.com', '终态备注成员');
 insert into public.team_tasks (id, team_id, title, created_by)
 values ('a2a2a2a2-a2a2-42a2-82a2-a2a2a2a2a2a2', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '终态备注', '11111111-1111-4111-8111-111111111111');
 insert into public.team_task_leaders (task_id, team_id, user_id)
 values ('a2a2a2a2-a2a2-42a2-82a2-a2a2a2a2a2a2', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111');
 insert into public.team_task_assignees (task_id, team_id, user_id, status)
-values ('a2a2a2a2-a2a2-42a2-82a2-a2a2a2a2a2a2', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '22222222-2222-4222-8222-222222222222', 'approved');
+values ('a2a2a2a2-a2a2-42a2-82a2-a2a2a2a2a2a2', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'acacacac-acac-4cac-8cac-acacacacacac', 'approved');
 set local role authenticated;
-select set_config('request.jwt.claims', '{"sub":"22222222-2222-4222-8222-222222222222","email":"member1@example.com"}', true);
+select set_config('request.jwt.claims', '{"sub":"acacacac-acac-4cac-8cac-acacacacacac","email":"terminal-note@example.com"}', true);
 select throws_ok(
   $$select public.team_add_progress_note('a2a2a2a2-a2a2-42a2-82a2-a2a2a2a2a2a2', 'a2a2a2a2-a2a2-42a2-82a2-a2a2a2a2a2a3', '终态后不应写入', 'a2a2a2a2-a2a2-42a2-82a2-a2a2a2a2a2a4')$$,
   'P0001',
@@ -914,6 +918,26 @@ select throws_ok(
   'P0001',
   'APPROVER_REQUIRED',
   'leader demotion cannot remove the only non-assignee approver'
+);
+select lives_ok(
+  $$select public.team_archive_task('f3f3f3f3-f3f3-43f3-83f3-f3f3f3f3f3f3', 1, 'f2f2f2f2-f2f2-42f2-82f2-f2f2f2f2f2f5')$$,
+  'leader can archive the demotion-coverage task'
+);
+select lives_ok(
+  $$select public.team_set_member_role(
+    'f1f1f1f1-f1f1-4f1f-8f1f-f1f1f1f1f1f1',
+    'abababab-abab-4bab-8bab-abababababab',
+    'member',
+    'f2f2f2f2-f2f2-42f2-82f2-f2f2f2f2f2f6'
+  )$$,
+  'leader can demote after the task is archived'
+);
+select is(
+  (select count(*)::int from public.team_task_leaders
+   where task_id = 'f3f3f3f3-f3f3-43f3-83f3-f3f3f3f3f3f3'
+     and user_id = 'abababab-abab-4bab-8bab-abababababab'),
+  1,
+  'demotion preserves archived task leadership history'
 );
 
 reset role;

@@ -286,8 +286,12 @@ begin
   where team_id = p_team_id and user_id = p_user_id and status = 'active';
 
   if v_current = 'leader' and p_role = 'member' then
-    delete from public.team_task_leaders
-    where team_id = p_team_id and user_id = p_user_id;
+    delete from public.team_task_leaders l
+    using public.team_tasks t
+    where l.task_id = t.id
+      and l.team_id = p_team_id
+      and l.user_id = p_user_id
+      and t.archived_at is null;
   end if;
 end;
 $$;
