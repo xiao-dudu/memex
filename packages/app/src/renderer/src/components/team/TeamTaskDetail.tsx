@@ -1,9 +1,10 @@
 import { useState } from 'react';
+import type { TeamTaskEvent } from '@memex/shared';
 import { Archive, Check, RotateCcw, X } from 'lucide-react';
 import { canApproveAssignee, deriveTeamTaskState } from '@memex/shared/team';
 import { useTeamStore } from '../../store/useTeamStore';
 import { Button } from '../ui/button';
-import { TeamTaskDescriptionDrawer } from './TeamTaskDescriptionDrawer';
+import { canEditTeamTask, TeamTaskDescriptionDrawer } from './TeamTaskDescriptionDrawer';
 
 const STATUS_LABEL = {
   todo: '待办',
@@ -19,6 +20,18 @@ const STATE_LABEL = {
   ended_with_closed: '已结束',
   archived: '已归档',
 } as const;
+
+const EVENT_LABEL: Record<TeamTaskEvent['type'], string> = {
+  created: '创建了任务',
+  assigned: '分配了分项',
+  started: '开始处理分项',
+  submitted: '提交了分项验收',
+  returned: '退回了分项',
+  approved: '通过了分项',
+  reopened: '重新打开了任务',
+  archived: '归档了任务',
+  closed: '关闭了分项',
+};
 
 export function TeamTaskDetail() {
   const {
@@ -47,14 +60,20 @@ export function TeamTaskDetail() {
   const leaders = members
     .filter((member) => member.role === 'leader' && member.removedAt === null)
     .map((member) => member.id);
+  const memberName = (id: string) =>
+    members.find((member) => member.id === id)?.displayName ?? '未知成员';
   const mine = activeTask.assignees.find((item) => item.id === session.userId);
-  const canEdit =
-    session.role === 'leader' &&
-    (activeTask.createdBy === session.userId ||
-      activeTask.leaders.some((item) => item.id === session.userId));
+  const taskState = deriveTeamTaskState(activeTask);
+  const archived = activeTask.archivedAt !== null;
+  const terminal = taskState === 'completed' || taskState === 'ended_with_closed';
+  const canEdit = canEditTeamTask(activeTask, session);
+  const eventLabel = (item: TeamTaskEvent) => {
+    const target = item.targetUserId ? `（${memberName(item.targetUserId)}）` : '';
+    return `${memberName(item.actorId)} ${EVENT_LABEL[item.type]}${target}`;
+  };
 
   const submit = async () => {
-    if (!mine || !note.trim()) return;
+    if (!mine || !note.trim() || archived) return;
     await submitAssignee(activeTask.id, note.trim(), mine.version);
     setNote('');
   };
@@ -65,7 +84,7 @@ export function TeamTaskDetail() {
         <div className="flex items-start gap-3">
           <h1 className="min-w-0 flex-1 text-xl font-semibold">{activeTask.title}</h1>
           <span className="rounded-md bg-[var(--hover)] px-2 py-1 text-[11px]">
-            {STATE_LABEL[deriveTeamTaskState(activeTask)]}
+            {STATE_LABEL[taskState]}
           </span>
         </div>
         <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-[var(--muted)]">
@@ -88,7 +107,7 @@ export function TeamTaskDetail() {
             onClick={() => setDescriptionOpen(true)}
             aria-label="打开团队任务描述"
           >
-            查看/编辑描述
+            {canEdit ? '查看/编辑描述' : '查看描述'}
           </button>
         </div>
       </header>
@@ -96,6 +115,7 @@ export function TeamTaskDetail() {
       <div className="mt-5 space-y-3">
         {activeTask.assignees.map((assignee) => {
           const canReview =
+            !archived &&
             canApproveAssignee(activeTask, session.userId!, assignee.id, leaders) &&
             assignee.status === 'submitted';
           return (
@@ -158,7 +178,7 @@ export function TeamTaskDetail() {
         })}
       </div>
 
-      {mine && mine.status === 'doing' ? (
+      {!archived && mine && mine.status === 'doing' ? (
         <div className="mt-5 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">
           <label className="text-[12px] font-medium" htmlFor="team-progress-note">
             本次进度备注
@@ -175,19 +195,21 @@ export function TeamTaskDetail() {
           </Button>
         </div>
       ) : null}
-      {mine?.status === 'todo' ? (
+      {!archived && mine?.status === 'todo' ? (
         <Button className="mt-4" onClick={() => void startAssignee(activeTask.id, mine.version)}>
           开始处理
         </Button>
       ) : null}
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <section>
+        <section aria-label="进度备注历史">
           <h2 className="mb-2 text-[12px] font-semibold">进度备注历史</h2>
           <div className="space-y-2">
             {notes.map((item) => (
               <p key={item.id} className="rounded-lg bg-[var(--surface)] p-2 text-[12px]">
-                {item.body}
+                <span className="font-medium text-[var(--ink)]">{memberName(item.userId)}</span>
+                <span className="mx-1.5 text-[var(--faint)]">·</span>
+                <span>{item.body}</span>
                 <span className="ml-2 text-[10px] text-[var(--faint)]">
                   {new Date(item.createdAt).toLocaleString('zh-CN', { hour12: false })}
                 </span>
@@ -195,12 +217,13 @@ export function TeamTaskDetail() {
             ))}
           </div>
         </section>
-        <section>
+        <section aria-label="审计记录">
           <h2 className="mb-2 text-[12px] font-semibold">审计记录</h2>
           <div className="space-y-2">
             {events.map((item) => (
               <p key={item.id} className="text-[11px] text-[var(--muted)]">
-                {item.type} · {new Date(item.createdAt).toLocaleString('zh-CN', { hour12: false })}
+                {eventLabel(item)} ·{' '}
+                {new Date(item.createdAt).toLocaleString('zh-CN', { hour12: false })}
               </p>
             ))}
           </div>
@@ -209,12 +232,14 @@ export function TeamTaskDetail() {
 
       {canEdit ? (
         <footer className="mt-8 flex gap-2 border-t border-[var(--line)] pt-4">
-          <Button
-            variant="outline"
-            onClick={() => void reopenTask(activeTask.id, activeTask.version)}
-          >
-            <RotateCcw size={13} /> 重新打开任务
-          </Button>
+          {terminal ? (
+            <Button
+              variant="outline"
+              onClick={() => void reopenTask(activeTask.id, activeTask.version)}
+            >
+              <RotateCcw size={13} /> 重新打开任务
+            </Button>
+          ) : null}
           <Button
             variant="danger"
             onClick={() => void archiveTask(activeTask.id, activeTask.version)}
