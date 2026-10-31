@@ -76,9 +76,28 @@ const signedOut: TeamSessionInfo = {
 };
 const idleSync: TeamSyncState = { phase: 'idle', pendingCount: 0, lastSyncedAt: null, message: null };
 
+const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
 export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
   return create<TeamState>((set, get) => {
-    const apply = (value: TeamBootstrap) =>
+    let unsubscribeSync: (() => void) | null = null;
+    let reloadRequestId = 0;
+    let selectTaskRequestId = 0;
+
+    const invalidateTaskRequests = () => {
+      reloadRequestId += 1;
+      selectTaskRequestId += 1;
+    };
+
+    const apply = (value: TeamBootstrap) => {
+      const state = get();
+      const identityChanged =
+        state.session.signedIn !== value.session.signedIn ||
+        state.session.userId !== value.session.userId ||
+        state.session.teamId !== value.session.teamId ||
+        state.session.role !== value.session.role ||
+        state.team?.id !== value.team?.id;
+      if (identityChanged) invalidateTaskRequests();
       set({
         session: value.session,
         team: value.team,
@@ -88,29 +107,48 @@ export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
         syncState: value.sync,
         loading: false,
         error: null,
+        ...(identityChanged ? { activeTask: null, notes: [], events: [] } : {}),
       });
+    };
 
-    const run = async <T,>(action: () => Promise<T>): Promise<T> => {
+    const run = async <T,>(
+      action: () => Promise<T>,
+      isCurrent: () => boolean = () => true,
+    ): Promise<T> => {
+      if (isCurrent()) set({ error: null });
       try {
-        set({ error: null });
         return await action();
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        set({ error: message });
+        if (isCurrent()) set({ error: errorMessage(error) });
         throw error;
       }
     };
 
     const reload = async () => {
+      const requestId = ++reloadRequestId;
+      const isCurrent = () => requestId === reloadRequestId;
       const state = get();
-      const [tasks, notifications] = await Promise.all([
-        window.memex.team.listTasks({ view: state.view, memberId: state.memberFilter ?? undefined }),
-        window.memex.team.listNotifications(),
-      ]);
-      const activeTask = state.activeTask
-        ? tasks.find((task) => task.id === state.activeTask?.id) ?? null
-        : null;
-      set({ tasks, notifications, activeTask });
+      try {
+        await run(async () => {
+          const [tasks, notifications] = await Promise.all([
+            window.memex.team.listTasks({ view: state.view, memberId: state.memberFilter ?? undefined }),
+            window.memex.team.listNotifications(),
+          ]);
+          if (!isCurrent()) return;
+          const currentActiveTaskId = get().activeTask?.id ?? null;
+          const activeTask = currentActiveTaskId
+            ? tasks.find((task) => task.id === currentActiveTaskId) ?? null
+            : null;
+          set({
+            tasks,
+            notifications,
+            activeTask,
+            ...(activeTask ? {} : { notes: [], events: [] }),
+          });
+        }, isCurrent);
+      } catch (error) {
+        if (isCurrent()) throw error;
+      }
     };
 
     return {
@@ -129,6 +167,9 @@ export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
       memberFilter: null,
 
       async bootstrap() {
+        if (!unsubscribeSync) {
+          unsubscribeSync = window.memex.team.onSyncState((syncState) => set({ syncState }));
+        }
         set({ loading: true });
         try {
           apply(await run(() => window.memex.team.bootstrap()));
@@ -147,13 +188,21 @@ export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
 
       async signOut() {
         await run(() => window.memex.team.signOut());
+        invalidateTaskRequests();
         set({
           session: signedOut,
           team: null,
           members: [],
           tasks: [],
           activeTask: null,
+          notes: [],
+          events: [],
           notifications: [],
+          syncState: idleSync,
+          loading: false,
+          error: null,
+          view: 'all',
+          memberFilter: null,
         });
       },
 
@@ -167,27 +216,40 @@ export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
 
       async setView(view) {
         set({ view, memberFilter: view === 'mine' ? null : get().memberFilter });
-        await run(reload);
+        await reload();
       },
 
       async setMemberFilter(memberId) {
         set({ memberFilter: memberId });
-        await run(reload);
+        await reload();
       },
 
       async selectTask(id) {
+        const requestId = ++selectTaskRequestId;
+        const isCurrent = () => requestId === selectTaskRequestId;
         if (!id) {
           set({ activeTask: null, notes: [], events: [] });
           return;
         }
-        const [task, notes, events] = await run(() =>
-          Promise.all([
-            window.memex.team.getTask(id),
-            window.memex.team.getTaskNotes(id),
-            window.memex.team.getTaskEvents(id),
-          ]),
-        );
-        set({ activeTask: task, notes, events });
+        try {
+          const [task, notes, events] = await run(
+            () =>
+              Promise.all([
+                window.memex.team.getTask(id),
+                window.memex.team.getTaskNotes(id),
+                window.memex.team.getTaskEvents(id),
+              ]),
+            isCurrent,
+          );
+          if (!isCurrent()) return;
+          if (!task) {
+            set({ activeTask: null, notes: [], events: [] });
+            return;
+          }
+          set({ activeTask: task, notes, events });
+        } catch (error) {
+          if (isCurrent()) throw error;
+        }
       },
 
       refresh: reload,
@@ -236,7 +298,8 @@ export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
 
       async archiveTask(taskId, version) {
         await run(() => window.memex.team.archiveTask(taskId, version));
-        set({ activeTask: null });
+        selectTaskRequestId += 1;
+        set({ activeTask: null, notes: [], events: [] });
         await reload();
       },
 
@@ -265,23 +328,48 @@ export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
       },
 
       async markNotificationRead(id) {
-        await run(() => window.memex.team.markNotificationRead(id));
-        await reload();
+        const previous = get().notifications.find((item) => item.id === id);
+        const readAt = previous?.readAt ?? Date.now();
+        if (previous) {
+          set((state) => ({
+            notifications: state.notifications.map((item) =>
+              item.id === id ? { ...item, readAt } : item,
+            ),
+          }));
+        }
+        try {
+          await run(() => window.memex.team.markNotificationRead(id));
+        } catch (error) {
+          if (previous) {
+            set((state) => ({
+              notifications: state.notifications.map((item) =>
+                item.id === id ? { ...item, readAt: previous.readAt } : item,
+              ),
+            }));
+          }
+          throw error;
+        }
       },
 
       async syncNow() {
+        let syncState: TeamSyncState;
         try {
-          const syncState = await run(() => window.memex.team.sync());
-          set({ syncState });
-          await reload();
-        } catch (value) {
+          syncState = await run(() => window.memex.team.sync());
+        } catch (error) {
           set({
             syncState: {
               ...get().syncState,
               phase: 'error',
-              message: value instanceof Error ? value.message : String(value),
+              message: errorMessage(error),
             },
           });
+          return;
+        }
+        set({ syncState });
+        try {
+          await reload();
+        } catch {
+          // reload already records the failure in `error`; keep the sync result intact.
         }
       },
     };
