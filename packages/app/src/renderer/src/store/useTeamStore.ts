@@ -76,7 +76,10 @@ const signedOut: TeamSessionInfo = {
 };
 const idleSync: TeamSyncState = { phase: 'idle', pendingCount: 0, lastSyncedAt: null, message: null };
 
-const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
+const errorMessage = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.replace(/^Error invoking remote method '[^']+': Error: /, '');
+};
 
 export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
   return create<TeamState>((set, get) => {

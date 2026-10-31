@@ -161,6 +161,17 @@ describe('team store', () => {
     expect(store.getState().session.role).toBe('leader');
   });
 
+  it('normalizes the Electron IPC wrapper from bootstrap errors', async () => {
+    team.bootstrap.mockRejectedValueOnce(
+      new Error("Error invoking remote method 'team:bootstrap': Error: 团队服务未配置"),
+    );
+    const store = createTeamStore();
+
+    await store.getState().bootstrap();
+
+    expect(store.getState().error).toBe('团队服务未配置');
+  });
+
   it('creates a task and selects it', async () => {
     const store = createTeamStore();
     await store.getState().bootstrap();

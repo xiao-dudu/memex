@@ -39,7 +39,7 @@ test('personal tasks still work when team cloud is not configured', async () => 
 
   await page.getByRole('button', { name: '团队', exact: true }).click();
   await expect(page.getByRole('heading', { name: '登录团队空间' })).toBeVisible();
-  await expect(page.getByText('团队服务未配置')).toBeVisible();
+  await expect(page.getByText('团队服务未配置', { exact: true })).toBeVisible();
 
   await page.getByRole('button', { name: '任务', exact: true }).first().click();
   await expect(page.getByText('个人任务不受团队影响', { exact: true }).first()).toBeVisible();
