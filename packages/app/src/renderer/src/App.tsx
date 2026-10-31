@@ -13,6 +13,7 @@ import { ReportList } from './components/reports/ReportList';
 import { ReportWorkspace } from './components/reports/ReportWorkspace';
 import { SearchPalette } from './components/search/SearchPalette';
 import { SettingsDialog } from './components/settings/SettingsDialog';
+import { TeamWorkspace } from './components/team/TeamWorkspace';
 import { TaskTimerBar } from './components/tasks/TaskTimerBar';
 import { useAppStore } from './store/useAppStore';
 import { useReportStore } from './store/useReportStore';
@@ -182,8 +183,8 @@ export default function App() {
         event.preventDefault();
         if (event.shiftKey) void createNote();
         else if (module === 'tasks') void createTask('未命名任务');
+        else if (module === 'notes') void createNote();
         else if (module === 'reports') startNewReport();
-        else void createNote();
         return;
       }
       if (event.key === 'Escape' && !editing) {
@@ -198,7 +199,7 @@ export default function App() {
   const createCurrent = () => {
     if (module === 'tasks') void createTask('未命名任务');
     else if (module === 'notes') void createNote();
-    else startNewReport();
+    else if (module === 'reports') startNewReport();
   };
 
   return (
@@ -214,6 +215,7 @@ export default function App() {
 
       <div className="flex min-h-0 flex-1">
         <Sidebar />
+        <div className={module === 'team' ? 'hidden' : 'contents'}>
 
         <AnimatePresence initial={false} mode="popLayout">
           {!listCollapsed ? (
@@ -270,6 +272,8 @@ export default function App() {
         ) : (
           <ReportWorkspace />
         )}
+        </div>
+        {module === 'team' ? <TeamWorkspace /> : null}
       </div>
 
       <SearchPalette />

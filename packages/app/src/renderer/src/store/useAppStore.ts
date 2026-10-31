@@ -16,7 +16,7 @@ import { emptyDocument } from '../lib/tiptap';
 import { endOfToday } from '../lib/date';
 import { createTimer, type TaskTimerMode, type TaskTimerState } from '../lib/timer';
 
-export type AppModule = 'tasks' | 'notes' | 'reports';
+export type AppModule = 'tasks' | 'notes' | 'reports' | 'team';
 
 interface AppState {
   module: AppModule;
