@@ -6,6 +6,10 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin({ exclude: ['@memex/shared'] })],
+    define: {
+      __MEMEX_SUPABASE_URL__: JSON.stringify(process.env.MEMEX_SUPABASE_URL ?? ''),
+      __MEMEX_SUPABASE_ANON_KEY__: JSON.stringify(process.env.MEMEX_SUPABASE_ANON_KEY ?? ''),
+    },
     build: {
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/main/index.ts') },

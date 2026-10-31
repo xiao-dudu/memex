@@ -1,3 +1,10 @@
+/** 当天 23:59 的时间戳：落在「今天」视图里，又不会一创建就被标成逾期。 */
+export function endOfToday(now: number = Date.now()): number {
+  const date = new Date(now);
+  date.setHours(23, 59, 0, 0);
+  return date.getTime();
+}
+
 export function formatDue(value: number | null): string {
   if (!value) return '';
   const date = new Date(value);

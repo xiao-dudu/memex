@@ -31,7 +31,50 @@ import type {
   ReportUpdateInput,
 } from './reports/types.js';
 
+import type {
+  TeamBootstrap, TeamCreateInput, TeamInvite, TeamInviteCreateInput, TeamJoinInput, TeamMember, TeamMemberEvent,
+  TeamNotification, TeamOutboxFailure, TeamProgressNote, TeamRolePatch, TeamSessionInfo, TeamSignInInput,
+  TeamSignUpInput, TeamSyncState, TeamTask, TeamTaskEvent, TeamTaskFilter, TeamTaskInput, TeamTaskPatch,
+} from './team/types.js';
+
 export interface MemexApi {
+  team: {
+    bootstrap(): Promise<TeamBootstrap>;
+    refreshSession(): Promise<TeamSessionInfo>;
+    signIn(input: TeamSignInInput): Promise<TeamBootstrap>;
+    signUp(input: TeamSignUpInput): Promise<{ needsEmailConfirmation: boolean }>;
+    signOut(): Promise<void>;
+    createTeam(input: TeamCreateInput): Promise<TeamBootstrap>;
+    joinTeam(input: TeamJoinInput): Promise<TeamBootstrap>;
+    listTasks(filter?: TeamTaskFilter): Promise<TeamTask[]>;
+    listNotifications(): Promise<TeamNotification[]>;
+    listMembers(): Promise<TeamMember[]>;
+    listMemberEvents(): Promise<TeamMemberEvent[]>;
+    getTask(id: string): Promise<TeamTask | null>;
+    getTaskNotes(taskId: string): Promise<TeamProgressNote[]>;
+    getTaskEvents(taskId: string): Promise<TeamTaskEvent[]>;
+    createTask(input: TeamTaskInput): Promise<TeamTask>;
+    updateTask(id: string, patch: TeamTaskPatch): Promise<TeamTask>;
+    startAssignee(taskId: string, expectedVersion: number): Promise<void>;
+    addProgressNote(taskId: string, body: string): Promise<void>;
+    submitAssignee(taskId: string, body: string, expectedVersion: number): Promise<void>;
+    reviewAssignee(taskId: string, assigneeId: string, decision: 'approve' | 'return', note: string | null, expectedVersion: number): Promise<void>;
+    reopenTask(taskId: string, expectedVersion: number): Promise<void>;
+    archiveTask(taskId: string, expectedVersion: number): Promise<void>;
+    closeAssignee(taskId: string, assigneeId: string, reason: string, expectedVersion: number): Promise<void>;
+    createInvite(input: TeamInviteCreateInput): Promise<string>;
+    listInvites(): Promise<TeamInvite[]>;
+    revokeInvite(inviteId: string): Promise<void>;
+    setMemberRole(patch: TeamRolePatch): Promise<void>;
+    removeMember(userId: string): Promise<void>;
+    leaveTeam(): Promise<void>;
+    markNotificationRead(id: string): Promise<void>;
+    listOutboxFailures(): Promise<TeamOutboxFailure[]>;
+    retryOutbox(id: string): Promise<void>;
+    discardOutbox(id: string): Promise<void>;
+    sync(): Promise<TeamSyncState>;
+    onSyncState(callback: (state: TeamSyncState) => void): () => void;
+  };
   tasks: {
     list(filter?: TaskFilter): Promise<Task[]>;
     get(id: string): Promise<Task | null>;
@@ -113,6 +156,41 @@ export interface MemexApi {
 }
 
 export const IPC = {
+  teamBootstrap: 'team:bootstrap',
+  teamRefreshSession: 'team:refresh-session',
+  teamSignIn: 'team:sign-in',
+  teamSignUp: 'team:sign-up',
+  teamSignOut: 'team:sign-out',
+  teamCreateTeam: 'team:create-team',
+  teamJoinTeam: 'team:join-team',
+  teamTasksList: 'team:tasks-list',
+  teamTasksGet: 'team:tasks-get',
+  teamNotificationsList: 'team:notifications-list',
+  teamMembers: 'team:members',
+  teamTaskNotes: 'team:task-notes',
+  teamTaskEvents: 'team:task-events',
+  teamTasksCreate: 'team:tasks-create',
+  teamTasksUpdate: 'team:tasks-update',
+  teamStartAssignee: 'team:start-assignee',
+  teamAddNote: 'team:add-note',
+  teamSubmitAssignee: 'team:submit-assignee',
+  teamReviewAssignee: 'team:review-assignee',
+  teamReopenTask: 'team:reopen-task',
+  teamArchiveTask: 'team:archive-task',
+  teamCloseAssignee: 'team:close-assignee',
+  teamCreateInvite: 'team:create-invite',
+  teamInvitesList: 'team:invites-list',
+  teamRevokeInvite: 'team:revoke-invite',
+  teamSetMemberRole: 'team:set-member-role',
+  teamRemoveMember: 'team:remove-member',
+  teamLeaveTeam: 'team:leave-team',
+  teamMemberEvents: 'team:member-events',
+  teamMarkNotificationRead: 'team:mark-notification-read',
+  teamOutboxFailures: 'team:outbox-failures',
+  teamOutboxRetry: 'team:outbox-retry',
+  teamOutboxDiscard: 'team:outbox-discard',
+  teamSync: 'team:sync',
+  teamSyncState: 'team:sync-state',
   tasksList: 'tasks:list',
   tasksGet: 'tasks:get',
   tasksCreate: 'tasks:create',

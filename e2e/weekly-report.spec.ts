@@ -64,12 +64,13 @@ test.afterEach(async () => {
 });
 
 test('create template, generate report, edit and export Markdown', async () => {
-  const composer = page.getByPlaceholder('快速添加任务，回车创建');
+  const composer = page.getByLabel('快速添加任务');
   await composer.fill('完成周报模块');
   await composer.press('Enter');
   await expect(page.getByPlaceholder('任务标题')).toHaveValue('完成周报模块');
 
   await page.getByTitle('设置').click();
+  await page.getByText('AI 服务', { exact: true }).click();
   await page.getByLabel('Base URL').fill(baseUrl);
   await page.getByLabel('模型').fill('mock-model');
   await page.getByRole('button', { name: '保存配置' }).click();
@@ -135,9 +136,3 @@ test('create template, generate report, edit and export Markdown', async () => {
   expect(payload.messages[1]?.content).toContain('完成周报模块');
   expect(authorizationHeaders[0]).toBeUndefined();
 });
-
-
-
-
-
-

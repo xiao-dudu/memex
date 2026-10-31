@@ -1,6 +1,8 @@
-import { app, BrowserWindow } from 'electron';
-import { resolve } from 'node:path';
+import { app, BrowserWindow, Notification, safeStorage } from 'electron';
+import { randomUUID } from 'node:crypto';
+import { join, resolve } from 'node:path';
 import { mkdirSync } from 'node:fs';
+import { IPC } from '@memex/shared';
 import { closeDatabase, getRepositories, initDatabase } from './db.js';
 import { registerIpcHandlers } from './ipc.js';
 import { maybeDailyBackup } from './data.js';
@@ -9,6 +11,16 @@ import { attachTimerWidgetToWindow, registerTimerWidgetIpc } from './windows/tim
 import { destroyTray, createTray } from './system/tray.js';
 import { registerShortcuts, unregisterShortcuts } from './system/shortcuts.js';
 import { initUpdateService } from './updater.js';
+import { getTeamConfig } from './team/team-config.js';
+import { createEncryptedSessionStorage } from './team/team-session-storage.js';
+import { createTeamClient } from './team/team-client.js';
+import { openTeamCache, type TeamCache } from './team/team-cache.js';
+import { createTeamSync } from './team/team-sync.js';
+import { createTeamRemoteApi } from './team/team-remote-api.js';
+import { createTeamRealtime } from './team/team-realtime.js';
+import { createTeamService, createUnavailableTeamService, type TeamService } from './team/team-service.js';
+import { registerTeamIpc } from './team/team-ipc.js';
+import { createTeamNotificationController } from './team/team-notifications.js';
 
 let quitting = false;
 
@@ -33,6 +45,52 @@ if (!hasLock) {
     const window = createMainWindow();
     registerTimerWidgetIpc();
     attachTimerWidgetToWindow(window);
+
+    const teamConfig = getTeamConfig();
+    let teamService: TeamService;
+    let teamCache: TeamCache | null = null;
+    if (teamConfig.configured) {
+      const cache = openTeamCache(join(app.getPath('userData'), 'team-cache.db'));
+      const storage = createEncryptedSessionStorage(join(app.getPath('userData'), 'team-session.bin'), safeStorage);
+      const client = createTeamClient(teamConfig, storage);
+      const api = createTeamRemoteApi(client.getSupabase());
+      const sync = createTeamSync({ api, cache, isOnline: () => true, now: Date.now });
+      const realtime = createTeamRealtime(client.getSupabase());
+      teamCache = cache;
+      teamService = createTeamService({
+        client,
+        cache,
+        sync,
+        api,
+        realtime,
+        now: Date.now,
+        randomId: randomUUID,
+        isOnline: () => true,
+      });
+      const notifications = createTeamNotificationController({
+        cache,
+        notify: (title, body) => {
+          if (Notification.isSupported()) new Notification({ title, body }).show();
+        },
+        now: Date.now,
+      });
+      const runNotifications = async () => {
+        const session = await teamService.getSession();
+        notifications.showUnread(session);
+        notifications.scanDue(session);
+      };
+      const notificationTimer = setInterval(() => void runNotifications().catch(() => undefined), 60_000);
+      void runNotifications().catch(() => undefined);
+      window.on('focus', () => {
+        void teamService.sync().catch(() => undefined);
+        void runNotifications().catch(() => undefined);
+      });
+      app.on('before-quit', () => clearInterval(notificationTimer));
+    } else {
+      teamService = createUnavailableTeamService();
+    }
+    registerTeamIpc(teamService, (state) => getMainWindow()?.webContents.send(IPC.teamSyncState, state));
+    app.on('before-quit', () => teamCache?.close());
     window.on('close', (event) => {
       if (quitting) return;
       const closeToTray = getRepositories().settings.get().closeToTray;

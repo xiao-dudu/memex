@@ -105,6 +105,11 @@ export function Select({
   }, [open]);
 
   const onPanelKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      closePanel();
+      return;
+    }
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
       const delta = event.key === 'ArrowDown' ? 1 : -1;

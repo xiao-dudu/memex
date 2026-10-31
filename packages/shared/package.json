@@ -17,6 +17,10 @@
     "./reports": {
       "types": "./dist/reports/index.d.ts",
       "import": "./dist/reports/index.js"
+    },
+    "./team": {
+      "types": "./dist/team/index.d.ts",
+      "import": "./dist/team/index.js"
     }
   },
   "scripts": {

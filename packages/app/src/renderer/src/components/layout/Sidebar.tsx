@@ -12,12 +12,13 @@ import {
   Settings2,
   StickyNote,
   Trash2,
+  Users,
   X,
 } from 'lucide-react';
 import { useState } from 'react';
 import { motion } from 'motion/react';
 import type { NoteView, Tag, TaskView } from '@memex/shared';
-import { useAppStore } from '../../store/useAppStore';
+import { useAppStore, type AppModule } from '../../store/useAppStore';
 import { useReportStore } from '../../store/useReportStore';
 import { cn } from '../ui/utils';
 import { ConfirmDialog } from '../ui/confirm-dialog';
@@ -36,16 +37,18 @@ const NOTE_VIEWS: { view: NoteView; label: string; icon: typeof StickyNote; coun
   { view: 'trash', label: '回收站', icon: Trash2, countKey: 'trash' },
 ];
 
-const MODULES: { id: 'tasks' | 'notes' | 'reports'; label: string; icon: typeof ListTodo }[] = [
+const MODULES: { id: AppModule; label: string; icon: typeof ListTodo }[] = [
   { id: 'tasks', label: '任务', icon: CheckCircle2 },
   { id: 'notes', label: '笔记', icon: StickyNote },
   { id: 'reports', label: '周报', icon: FileText },
+  { id: 'team', label: '团队', icon: Users },
 ];
 
-const CREATE_LABELS: Record<'tasks' | 'notes' | 'reports', string> = {
+const CREATE_LABELS: Record<AppModule, string> = {
   tasks: '新建任务',
   notes: '新建笔记',
   reports: '新建周报',
+  team: '团队',
 };
 
 export function Sidebar() {
@@ -84,7 +87,11 @@ export function Sidebar() {
     await refresh();
   };
 
-  const createIn = (target: 'tasks' | 'notes' | 'reports') => {
+  const createIn = (target: AppModule) => {
+    if (target === 'team') {
+      setModule('team');
+      return;
+    }
     if (target === 'tasks') {
       void createTask('未命名任务');
       return;
@@ -128,6 +135,13 @@ export function Sidebar() {
         >
           <FileText size={18} />
         </button>
+        <button
+          onClick={() => setModule('team')}
+          className={cn('flex h-9 w-9 items-center justify-center rounded-lg transition', module === 'team' ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : 'text-[var(--muted)] hover:bg-[var(--hover)]')}
+          title="团队"
+        >
+          <Users size={18} />
+        </button>
         <div className="flex-1" />
         <button
           onClick={() => setSettingsOpen(true)}
@@ -170,24 +184,26 @@ export function Sidebar() {
                 <Icon size={14} className={active ? 'text-[var(--accent)]' : ''} />
                 <span className="flex-1 text-left">{item.label}</span>
               </button>
-              <button
-                onClick={() => createIn(item.id)}
-                title={CREATE_LABELS[item.id]}
-                aria-label={CREATE_LABELS[item.id]}
-                className={cn(
-                  'mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--faint)] transition hover:bg-[var(--surface-2)] hover:text-[var(--accent)] focus-visible:opacity-100',
-                  active ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
-                )}
-              >
-                <Plus size={13} />
-              </button>
+              {item.id !== 'team' ? (
+                <button
+                  onClick={() => createIn(item.id)}
+                  title={CREATE_LABELS[item.id]}
+                  aria-label={CREATE_LABELS[item.id]}
+                  className={cn(
+                    'mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--faint)] transition hover:bg-[var(--surface-2)] hover:text-[var(--accent)] focus-visible:opacity-100',
+                    active ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
+                  )}
+                >
+                  <Plus size={13} />
+                </button>
+              ) : null}
             </div>
           );
         })}
       </div>
 
       <nav className="thin-scroll mt-4 flex-1 overflow-y-auto px-3">
-        {module === 'reports' ? (
+        {module === 'team' ? null : module === 'reports' ? (
           <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-3 shadow-sm">
             <div className="flex items-center gap-2 text-[13px] font-medium text-[var(--ink)]">
               <FileText size={14} className="text-[var(--accent)]" />

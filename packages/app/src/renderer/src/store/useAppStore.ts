@@ -13,9 +13,10 @@ import type {
   TaskView,
 } from '@memex/shared';
 import { emptyDocument } from '../lib/tiptap';
+import { endOfToday } from '../lib/date';
 import { createTimer, type TaskTimerMode, type TaskTimerState } from '../lib/timer';
 
-export type AppModule = 'tasks' | 'notes' | 'reports';
+export type AppModule = 'tasks' | 'notes' | 'reports' | 'team';
 
 interface AppState {
   module: AppModule;
@@ -52,7 +53,7 @@ interface AppState {
   openNote: (id: string) => Promise<void>;
   setTaskTag: (tag: string | null) => void;
   setNoteTag: (tag: string | null) => void;
-  createTask: (title: string) => Promise<Task>;
+  createTask: (title: string, dueAt?: number | null) => Promise<Task>;
   updateTask: (id: string, patch: TaskPatch) => Promise<void>;
   toggleTask: (task: Task) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
@@ -248,8 +249,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     );
   },
 
-  async createTask(title) {
-    const task = await window.memex.tasks.create({ title });
+  async createTask(title, dueAt) {
+    // 快速创建默认落在今天，避免新任务进不了「今天」视图
+    const task = await window.memex.tasks.create({ title, dueAt: dueAt === undefined ? endOfToday() : dueAt });
     set({ module: 'tasks', taskView: 'inbox', activeTask: task, detailCollapsed: false });
     await get().refresh();
     set({ activeTask: task });

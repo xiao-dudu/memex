@@ -2,6 +2,47 @@ import { contextBridge, ipcRenderer } from 'electron';
 import { IPC, type MemexApi } from '@memex/shared/ipc';
 
 const api: MemexApi = {
+  team: {
+    bootstrap: () => ipcRenderer.invoke(IPC.teamBootstrap),
+    refreshSession: () => ipcRenderer.invoke(IPC.teamRefreshSession),
+    signIn: (input) => ipcRenderer.invoke(IPC.teamSignIn, input),
+    signUp: (input) => ipcRenderer.invoke(IPC.teamSignUp, input),
+    signOut: () => ipcRenderer.invoke(IPC.teamSignOut),
+    createTeam: (input) => ipcRenderer.invoke(IPC.teamCreateTeam, input),
+    joinTeam: (input) => ipcRenderer.invoke(IPC.teamJoinTeam, input),
+    listTasks: (filter) => ipcRenderer.invoke(IPC.teamTasksList, filter),
+    listNotifications: () => ipcRenderer.invoke(IPC.teamNotificationsList),
+    listMembers: () => ipcRenderer.invoke(IPC.teamMembers),
+    listMemberEvents: () => ipcRenderer.invoke(IPC.teamMemberEvents),
+    getTask: (taskId) => ipcRenderer.invoke(IPC.teamTasksGet, taskId),
+    getTaskNotes: (taskId) => ipcRenderer.invoke(IPC.teamTaskNotes, taskId),
+    getTaskEvents: (taskId) => ipcRenderer.invoke(IPC.teamTaskEvents, taskId),
+    createTask: (input) => ipcRenderer.invoke(IPC.teamTasksCreate, input),
+    updateTask: (taskId, patch) => ipcRenderer.invoke(IPC.teamTasksUpdate, taskId, patch),
+    startAssignee: (taskId, expectedVersion) => ipcRenderer.invoke(IPC.teamStartAssignee, taskId, expectedVersion),
+    addProgressNote: (taskId, body) => ipcRenderer.invoke(IPC.teamAddNote, taskId, body),
+    submitAssignee: (taskId, body, expectedVersion) => ipcRenderer.invoke(IPC.teamSubmitAssignee, taskId, body, expectedVersion),
+    reviewAssignee: (taskId, assigneeId, decision, note, expectedVersion) => ipcRenderer.invoke(IPC.teamReviewAssignee, taskId, assigneeId, decision, note, expectedVersion),
+    reopenTask: (taskId, expectedVersion) => ipcRenderer.invoke(IPC.teamReopenTask, taskId, expectedVersion),
+    archiveTask: (taskId, expectedVersion) => ipcRenderer.invoke(IPC.teamArchiveTask, taskId, expectedVersion),
+    closeAssignee: (taskId, assigneeId, reason, expectedVersion) => ipcRenderer.invoke(IPC.teamCloseAssignee, taskId, assigneeId, reason, expectedVersion),
+    createInvite: (input) => ipcRenderer.invoke(IPC.teamCreateInvite, input),
+    listInvites: () => ipcRenderer.invoke(IPC.teamInvitesList),
+    revokeInvite: (inviteId) => ipcRenderer.invoke(IPC.teamRevokeInvite, inviteId),
+    setMemberRole: (patch) => ipcRenderer.invoke(IPC.teamSetMemberRole, patch),
+    removeMember: (userId) => ipcRenderer.invoke(IPC.teamRemoveMember, userId),
+    leaveTeam: () => ipcRenderer.invoke(IPC.teamLeaveTeam),
+    markNotificationRead: (notificationId) => ipcRenderer.invoke(IPC.teamMarkNotificationRead, notificationId),
+    listOutboxFailures: () => ipcRenderer.invoke(IPC.teamOutboxFailures),
+    retryOutbox: (operationId) => ipcRenderer.invoke(IPC.teamOutboxRetry, operationId),
+    discardOutbox: (operationId) => ipcRenderer.invoke(IPC.teamOutboxDiscard, operationId),
+    sync: () => ipcRenderer.invoke(IPC.teamSync),
+    onSyncState: (callback) => {
+      const listener = (_event: Electron.IpcRendererEvent, state: Parameters<typeof callback>[0]) => callback(state);
+      ipcRenderer.on(IPC.teamSyncState, listener);
+      return () => ipcRenderer.removeListener(IPC.teamSyncState, listener);
+    },
+  },
   tasks: {
     list: (filter) => ipcRenderer.invoke(IPC.tasksList, filter),
     get: (id) => ipcRenderer.invoke(IPC.tasksGet, id),
