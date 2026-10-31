@@ -246,6 +246,14 @@ describe('TeamTaskList', () => {
     await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument());
     expect(screen.getByRole('dialog', { name: '新建团队任务' })).toBeVisible();
     expect(priority).toHaveFocus();
+
+    await userEvent.click(priority);
+    expect(screen.getByRole('listbox')).toHaveFocus();
+    await userEvent.tab();
+    await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument());
+    expect(priority).toHaveFocus();
+    await userEvent.tab();
+    expect(screen.getByLabelText('团队任务截止时间')).toHaveFocus();
   });
 
   it('hides the edit action for archived tasks', () => {
