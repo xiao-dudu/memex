@@ -132,6 +132,8 @@ const createTeamApi = () => ({
   createTask: vi.fn().mockResolvedValue(task),
   archiveTask: vi.fn().mockResolvedValue(undefined),
   markNotificationRead: vi.fn().mockResolvedValue(undefined),
+  setMemberRole: vi.fn().mockResolvedValue(undefined),
+  removeMember: vi.fn().mockResolvedValue(undefined),
   sync: vi.fn().mockResolvedValue(idleSync),
   onSyncState: vi.fn((_callback: (state: TeamSyncState) => void) => vi.fn()),
 });
@@ -275,6 +277,30 @@ describe('team store', () => {
     ).rejects.toMatchObject({ message: '重新加载失败' });
 
     expect(store.getState().error).toBe('重新加载失败');
+  });
+
+  it('surfaces bootstrap failures after changing a member role', async () => {
+    const store = createTeamStore();
+    await store.getState().bootstrap();
+    team.bootstrap.mockRejectedValueOnce(new Error('刷新成员失败'));
+
+    await expect(
+      store.getState().setMemberRole({ userId: 'member-1', role: 'leader' }),
+    ).rejects.toMatchObject({ message: '刷新成员失败' });
+
+    expect(store.getState().error).toBe('刷新成员失败');
+  });
+
+  it('surfaces bootstrap failures after removing a member', async () => {
+    const store = createTeamStore();
+    await store.getState().bootstrap();
+    team.bootstrap.mockRejectedValueOnce(new Error('刷新成员失败'));
+
+    await expect(store.getState().removeMember('member-1')).rejects.toMatchObject({
+      message: '刷新成员失败',
+    });
+
+    expect(store.getState().error).toBe('刷新成员失败');
   });
 
   it('subscribes to sync-state changes once during bootstrap', async () => {

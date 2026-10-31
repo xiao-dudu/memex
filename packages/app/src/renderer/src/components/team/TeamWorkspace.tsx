@@ -8,7 +8,7 @@ import { TeamTaskDetail } from './TeamTaskDetail';
 import { TeamTaskList } from './TeamTaskList';
 
 export function TeamWorkspace() {
-  const { session, team, bootstrap, syncNow } = useTeamStore();
+  const { session, team, loading, bootstrap, syncNow } = useTeamStore();
   const [managementOpen, setManagementOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
 
@@ -22,16 +22,24 @@ export function TeamWorkspace() {
     const timer = window.setInterval(() => void syncNow(), 30_000);
     const onOnline = () => void syncNow();
     window.addEventListener('online', onOnline);
-    const unsubscribe = window.memex.team.onSyncState((state) =>
-      useTeamStore.setState({ syncState: state }),
-    );
 
     return () => {
       window.clearInterval(timer);
       window.removeEventListener('online', onOnline);
-      unsubscribe();
     };
   }, [session.teamId, syncNow]);
+
+  if (loading && !team) {
+    return (
+      <section
+        role="status"
+        aria-live="polite"
+        className="flex flex-1 items-center justify-center bg-[var(--surface)] text-[12px] text-[var(--muted)]"
+      >
+        正在加载团队空间…
+      </section>
+    );
+  }
 
   if (!session.signedIn || !team) return <TeamAuthPanel />;
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Copy, Trash2, UserCog } from 'lucide-react';
 import { useTeamStore } from '../../store/useTeamStore';
 import { Button } from '../ui/button';
@@ -10,13 +10,25 @@ interface Props {
 }
 
 export function TeamManagement({ open, onClose }: Props) {
-  const { team, members, createInvite, setMemberRole, removeMember } = useTeamStore();
+  const { session, team, members, createInvite, setMemberRole, removeMember } = useTeamStore();
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [actionError, setActionError] = useState('');
+  const identity = [session.userId, session.teamId, session.role, team?.id].join(':');
+  const previousIdentity = useRef(identity);
 
-  if (!open || !team) return null;
+  useEffect(() => {
+    if (previousIdentity.current === identity) return;
+    previousIdentity.current = identity;
+    setEmail('');
+    setCode('');
+    setError('');
+    setActionError('');
+    onClose();
+  }, [identity, onClose]);
+
+  if (!open || !team || session.role !== 'leader') return null;
 
   const invite = async () => {
     setError('');

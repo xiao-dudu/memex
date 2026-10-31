@@ -124,6 +124,15 @@ export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
       }
     };
 
+    const bootstrapNow = async () => {
+      set({ loading: true });
+      try {
+        apply(await run(() => window.memex.team.bootstrap()));
+      } catch (error) {
+        set({ loading: false });
+        throw error;
+      }
+    };
     const reload = async () => {
       const requestId = ++reloadRequestId;
       const isCurrent = () => requestId === reloadRequestId;
@@ -170,11 +179,10 @@ export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
         if (!unsubscribeSync) {
           unsubscribeSync = window.memex.team.onSyncState((syncState) => set({ syncState }));
         }
-        set({ loading: true });
         try {
-          apply(await run(() => window.memex.team.bootstrap()));
+          await bootstrapNow();
         } catch {
-          set({ loading: false });
+          // The store exposes bootstrap failures through `error`; initial callers stay mounted.
         }
       },
 
@@ -319,12 +327,12 @@ export function createTeamStore(): UseBoundStore<StoreApi<TeamState>> {
 
       async setMemberRole(patch) {
         await run(() => window.memex.team.setMemberRole(patch));
-        await get().bootstrap();
+        await bootstrapNow();
       },
 
       async removeMember(userId) {
         await run(() => window.memex.team.removeMember(userId));
-        await get().bootstrap();
+        await bootstrapNow();
       },
 
       async markNotificationRead(id) {

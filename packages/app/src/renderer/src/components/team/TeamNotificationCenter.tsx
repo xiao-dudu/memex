@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import type { TeamNotification } from '@memex/shared';
 import { useTeamStore } from '../../store/useTeamStore';
 import { Button } from '../ui/button';
 
@@ -8,8 +10,20 @@ interface Props {
 
 export function TeamNotificationCenter({ open, onClose }: Props) {
   const { notifications, markNotificationRead, selectTask } = useTeamStore();
+  const [error, setError] = useState('');
 
   if (!open) return null;
+
+  const openNotification = async (item: TeamNotification) => {
+    setError('');
+    try {
+      await markNotificationRead(item.id);
+      if (item.taskId) await selectTask(item.taskId);
+      onClose();
+    } catch (value) {
+      setError(value instanceof Error ? value.message : String(value));
+    }
+  };
 
   return (
     <div
@@ -25,16 +39,17 @@ export function TeamNotificationCenter({ open, onClose }: Props) {
             关闭
           </Button>
         </div>
+        {error ? (
+          <p role="alert" className="mt-3 text-[12px] text-red-600">
+            {error}
+          </p>
+        ) : null}
         <div className="mt-4 space-y-2">
           {notifications.map((item) => (
             <button
               key={item.id}
               className="w-full rounded-xl border border-[var(--line)] p-3 text-left"
-              onClick={() => {
-                void markNotificationRead(item.id);
-                if (item.taskId) void selectTask(item.taskId);
-                onClose();
-              }}
+              onClick={() => void openNotification(item)}
             >
               <div className="flex gap-2">
                 <span className="text-[13px] font-medium">{item.title}</span>

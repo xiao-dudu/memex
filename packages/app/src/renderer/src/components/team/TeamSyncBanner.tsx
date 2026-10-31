@@ -1,10 +1,22 @@
+import { useState } from 'react';
 import { RefreshCw, WifiOff } from 'lucide-react';
 import { useTeamStore } from '../../store/useTeamStore';
 
 export function TeamSyncBanner() {
   const { syncState, syncNow } = useTeamStore();
+  const [retrying, setRetrying] = useState(false);
 
   if (syncState.phase === 'idle' && syncState.pendingCount === 0) return null;
+
+  const retry = async () => {
+    if (retrying) return;
+    setRetrying(true);
+    try {
+      await syncNow();
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   return (
     <div className="flex items-center gap-2 border-b border-[var(--line)] bg-[var(--surface-2)] px-3 py-1.5 text-[11px] text-[var(--muted)]">
@@ -18,7 +30,12 @@ export function TeamSyncBanner() {
           (syncState.pendingCount > 0 ? `${syncState.pendingCount} 项等待同步` : '同步中…')}
       </span>
       {syncState.phase === 'error' || syncState.phase === 'offline' ? (
-        <button onClick={() => void syncNow()} className="text-[var(--accent)]">
+        <button
+          disabled={retrying}
+          aria-busy={retrying}
+          onClick={() => void retry()}
+          className="text-[var(--accent)] disabled:cursor-wait disabled:opacity-60"
+        >
           重试
         </button>
       ) : null}
