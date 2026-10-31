@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { TeamTask, TeamTaskInput } from '@memex/shared';
 import { hasNonAssigneeApprover } from '@memex/shared/team';
 import { fromDateTimeInput, toDateTimeInput } from '../../lib/date';
@@ -14,6 +14,15 @@ interface Props {
   onClose(): void;
 }
 
+const FOCUSABLE_SELECTOR = [
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  'a[href]',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
+
 export function TeamTaskEditor({ open, task = null, onClose }: Props) {
   const { members, session, createTask, updateTask } = useTeamStore();
   const [title, setTitle] = useState('');
@@ -24,6 +33,12 @@ export function TeamTaskEditor({ open, task = null, onClose }: Props) {
   const [leaderIds, setLeaderIds] = useState<string[]>([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) return;
@@ -32,9 +47,50 @@ export function TeamTaskEditor({ open, task = null, onClose }: Props) {
     setTags((task?.tags ?? []).join(', '));
     setDueAt(toDateTimeInput(task?.dueAt ?? null));
     setAssigneeIds(task?.assignees.map((item) => item.id) ?? []);
-    setLeaderIds(task?.leaders.map((item) => item.id) ?? []);
+    setLeaderIds(task ? task.leaders.map((item) => item.id) : session.userId ? [session.userId] : []);
     setError('');
-  }, [open, task]);
+  }, [open, task, session.userId]);
+
+  useEffect(() => {
+    if (!open) return;
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    dialogRef.current?.querySelector<HTMLElement>('[data-autofocus]')?.focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !dialog.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      if (previouslyFocused?.isConnected) previouslyFocused.focus();
+    };
+  }, [open]);
 
   if (!open) return null;
 
@@ -52,7 +108,7 @@ export function TeamTaskEditor({ open, task = null, onClose }: Props) {
         priority,
         dueAt: fromDateTimeInput(dueAt),
         tags: tags
-          .split(',')
+          .split(/[,，]/)
           .map((item) => item.trim())
           .filter(Boolean),
         assigneeIds,
@@ -72,16 +128,18 @@ export function TeamTaskEditor({ open, task = null, onClose }: Props) {
 
   return (
     <div
+      ref={dialogRef}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-4"
       role="dialog"
       aria-modal="true"
       aria-label={task ? '编辑团队任务' : '新建团队任务'}
+      tabIndex={-1}
     >
       <div className="w-full max-w-xl space-y-4 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5 shadow-xl">
         <h2 className="text-base font-semibold">{task ? '编辑团队任务' : '新建团队任务'}</h2>
         <label className="block text-[12px]">
           团队任务标题
-          <Input value={title} onChange={(event) => setTitle(event.target.value)} className="mt-1" />
+          <Input data-autofocus value={title} onChange={(event) => setTitle(event.target.value)} className="mt-1" />
         </label>
         <label className="block text-[12px]">
           优先级
